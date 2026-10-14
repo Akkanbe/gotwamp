@@ -28,16 +28,20 @@ type blockedStream struct {
 	grpc.ServerStream
 	ctx context.Context //nolint:containedctx // the RPC's
 	end context.CancelFunc
+	// sending counts the Sends in progress, across the streams sharing it.
+	sending *atomic.Int64
 }
 
 func newBlockedStream(t *testing.T) *blockedStream {
 	ctx, end := context.WithCancel(t.Context())
-	return &blockedStream{ctx: ctx, end: end}
+	return &blockedStream{ctx: ctx, end: end, sending: new(atomic.Int64)}
 }
 
 func (b *blockedStream) Context() context.Context { return b.ctx }
 
 func (b *blockedStream) Send(*gotwampv1.TestEvent) error {
+	b.sending.Add(1)
+	defer b.sending.Add(-1)
 	<-b.ctx.Done()
 	return b.ctx.Err()
 }
@@ -94,10 +98,12 @@ func TestStoppedHandlersEnd(t *testing.T) {
 	defer r.stop(t)
 	s, _ := testService(t)
 	s.deliveryWait = 200 * time.Millisecond
-	baseline := runtime.NumGoroutine()
+	// The senders of every RPC: none may stay blocked once its RPC ended.
+	sending := new(atomic.Int64)
 	req := &gotwampv1.RunTestRequest{Spec: lightSpec(r.d.LightAddrs()[0], 100_000)}
 	for i := range 4 {
 		st := newBlockedStream(t)
+		st.sending = sending
 		errc := make(chan error, 1)
 		go func() {
 			err := s.RunTest(req, st)
@@ -119,7 +125,9 @@ func TestStoppedHandlersEnd(t *testing.T) {
 	if n := s.delivering.Load(); n != 0 {
 		t.Errorf("%d RPCs still wait to deliver", n)
 	}
-	waitFor(t, "the goroutines of the RPCs to end", func() bool { return runtime.NumGoroutine() <= baseline+2 })
+	// Counting the goroutines of the process instead would also count the
+	// daemon's, whose number varies with GOMAXPROCS and the scheduler.
+	waitFor(t, "the senders of the RPCs to return", func() bool { return sending.Load() == 0 })
 }
 
 // TestDeliveryCap: beyond max_concurrent_tests finished runs waiting for

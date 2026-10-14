@@ -3,6 +3,9 @@
 GO      ?= go
 GOBIN   ?= $(shell $(GO) env GOPATH)/bin
 BIN_DIR ?= bin
+# RACE is the race detector flag of the test targets. CI empties it on a
+# runner whose kernel the race runtime cannot run on, and says so.
+RACE    ?= -race
 export PATH := $(GOBIN):$(PATH)
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
@@ -41,7 +44,7 @@ build: ## Build all packages and the binaries into bin/
 
 .PHONY: test
 test: ## Run the tests with the race detector
-	CGO_ENABLED=1 $(GO) test -race ./...
+	CGO_ENABLED=1 $(GO) test $(RACE) ./...
 
 # Soak test (test/soak): SOAK_SESSIONS sessions at SOAK_PPS packets per second
 # for SOAK_DURATION. The 24-hour M5 run: make soak SOAK_SESSIONS=100 SOAK_DURATION=24h
@@ -57,7 +60,7 @@ soak: ## Run the soak test: sessions, exporters and a loopback reflector in one 
 
 .PHONY: test-component
 test-component: ## Run the netns + netem component tests (needs sudo)
-	CGO_ENABLED=1 $(GO) test -race -tags integration -exec sudo -count=1 ./test/component/...
+	CGO_ENABLED=1 $(GO) test $(RACE) -tags integration -exec sudo -count=1 ./test/component/...
 
 # perfSONAR testpoint for make interop (test/interop/perfsonar/compose.yaml).
 INTEROP_COMPOSE := docker compose -f test/interop/perfsonar/compose.yaml
@@ -66,14 +69,14 @@ INTEROP_COMPOSE := docker compose -f test/interop/perfsonar/compose.yaml
 interop: ## Run the perfSONAR interop tests in Docker (INTEROP_CLI=1: also the CLI script; INTEROP_KEEP=1: keep the container)
 	$(INTEROP_COMPOSE) up -d --wait
 	@rc=0; \
-	CGO_ENABLED=1 $(GO) test -race -tags interop -count=1 -v ./test/interop/... || rc=$$?; \
+	CGO_ENABLED=1 $(GO) test $(RACE) -tags interop -count=1 -v ./test/interop/... || rc=$$?; \
 	if [ -n "$(INTEROP_CLI)" ]; then test/interop/perfsonar/run.sh || rc=$$?; fi; \
 	if [ -z "$(INTEROP_KEEP)" ]; then $(INTEROP_COMPOSE) down; fi; \
 	exit $$rc
 
 .PHONY: cover
 cover: ## Run the tests with coverage and print the per-function summary
-	CGO_ENABLED=1 $(GO) test -race -coverprofile=coverage.out ./...
+	CGO_ENABLED=1 $(GO) test $(RACE) -coverprofile=coverage.out ./...
 	$(GO) tool cover -func=coverage.out | tail -n 1
 
 .PHONY: lint

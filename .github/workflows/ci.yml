@@ -40,8 +40,30 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+      - name: Prepare the race detector
+        run: |
+          # The race runtime (ThreadSanitizer) can fail to map its shadow
+          # memory with the 32 random mmap bits of recent runner kernels;
+          # 28 is the usual workaround.
+          sudo sysctl -w vm.mmap_rnd_bits=28
+          # Should it still not start, test without it, and say so.
+          if ! CGO_ENABLED=1 go test -race -run '^$' ./internal/twamp/ntptime >race-probe.log 2>&1; then
+            cat race-probe.log
+            if grep -qE 'ThreadSanitizer|^FATAL:' race-probe.log; then
+              echo "::warning title=race detector::the race runtime does not start on this runner; testing without -race"
+              echo "RACE=" >>"$GITHUB_ENV"
+            else
+              exit 1
+            fi
+          fi
       - name: Test (race)
-        run: make cover
+        run: |
+          set -o pipefail
+          make cover 2>&1 | tee go-test.log
+      # The raw log is for signed-in users only: annotate the failures.
+      - name: Report test failures
+        if: failure()
+        run: .github/scripts/go-test-report.sh go-test.log
 
   component:
     # netns + veth + tc netem (test/component, build tag integration). The
@@ -62,8 +84,29 @@ jobs:
           }
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y tcpdump tshark
+      - name: Prepare the race detector
+        run: |
+          # The race runtime (ThreadSanitizer) can fail to map its shadow
+          # memory with the 32 random mmap bits of recent runner kernels;
+          # 28 is the usual workaround.
+          sudo sysctl -w vm.mmap_rnd_bits=28
+          # Should it still not start, test without it, and say so.
+          if ! CGO_ENABLED=1 go test -race -run '^$' ./internal/twamp/ntptime >race-probe.log 2>&1; then
+            cat race-probe.log
+            if grep -qE 'ThreadSanitizer|^FATAL:' race-probe.log; then
+              echo "::warning title=race detector::the race runtime does not start on this runner; testing without -race"
+              echo "RACE=" >>"$GITHUB_ENV"
+            else
+              exit 1
+            fi
+          fi
       - name: Component tests
-        run: make test-component
+        run: |
+          set -o pipefail
+          make test-component 2>&1 | tee go-test.log
+      - name: Report test failures
+        if: failure()
+        run: .github/scripts/go-test-report.sh go-test.log
 
   soak:
     # The short soak: 20 sessions × 10 pps for 60 s, checked for leaks. The
