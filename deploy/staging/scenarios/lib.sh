@@ -66,3 +66,39 @@ finish() {
 	fi
 	echo "all checks passed"
 }
+
+# attempt EXPECT LABEL ARGS...: one ad-hoc measurement that must succeed
+# without loss (EXPECT ok) or be refused (EXPECT reject); prints a row.
+attempt() {
+	local expect=$1 label=$2 out err rc=0
+	shift 2
+	err=$(mktemp)
+	out=$("${compose[@]}" exec -T sender gotwamp ping -q --output jsonl -c 50 -i 10ms "$@" 2>"$err") || rc=$?
+	local msg
+	msg=$(grep -m1 . "$err" | cut -c1-110 || true)
+	rm -f "$err"
+	if [[ $expect == ok ]]; then
+		local s
+		s=$(jq -r 'select(.summary) | .summary | "\(.sent) \(.received) \(.lost) \(.rtt.median)"' <<<"$out" 2>/dev/null || true)
+		read -r sent recv lost rtt <<<"$s"
+		if ((rc == 0)) && [[ -n $sent && $recv == "$sent" && $lost == 0 ]]; then
+			printf '  ok   %-44s %s/%s, rtt median %s\n' "$label" "$recv" "$sent" "$rtt"
+			return
+		fi
+		printf '  FAIL %-44s exit %d, %s %s\n' "$label" "$rc" "${s:-no summary}" "$msg"
+	else
+		if ((rc != 0)); then
+			printf '  ok   %-44s refused (exit %d): %s\n' "$label" "$rc" "$msg"
+			return
+		fi
+		printf '  FAIL %-44s accepted, expected a refusal\n' "$label"
+	fi
+	failures=$((failures + 1))
+}
+
+# prom QUERY: the first value of a Prometheus instant query (profile
+# observability), or empty.
+prom_url=${PROM_URL:-http://127.0.0.1:19090}
+prom() {
+	curl -fsS "$prom_url/api/v1/query" --data-urlencode "query=$1" | jq -r '.data.result[0].value[1] // empty'
+}

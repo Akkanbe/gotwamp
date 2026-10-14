@@ -18,7 +18,10 @@ reflector:
   enabled: true
   control:
     listen: ["0.0.0.0:862", "[::]:862"]
-    # the defaults: unauthenticated, and every TWAMP extension offered
+    # unauthenticated only (the default), and no TWAMP extension offered
+    # (the default offers all three): a sender asking for ISC or Symmetrical
+    # Size falls back to a plain session, one asking for Reflect Octets fails
+    extensions: []
   light:
     listeners:
       - listen: "0.0.0.0:862"

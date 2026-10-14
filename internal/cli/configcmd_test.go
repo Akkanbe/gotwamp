@@ -21,6 +21,7 @@ func TestConfigValidate(t *testing.T) {
 	good := write("good.yaml", "sender: {defaults: {padding: 1500}}\n")
 	bad := write("bad.yaml", "version: 2\nreflector: {ttl: 0}\n")
 	broken := write("broken.yaml", "daemon: [\n")
+	one := write("one.yaml", "reflector: {ttl: 0}\n")
 
 	code, out, _ := h.run(t.Context(), "config", "validate", "-f", good)
 	if code != ExitOK || !strings.Contains(out, "warning: sender.defaults.padding") || !strings.Contains(out, "configuration is valid") {
@@ -30,6 +31,9 @@ func TestConfigValidate(t *testing.T) {
 	if code != ExitUsage || !strings.Contains(errs, "error: version:") || !strings.Contains(errs, "error: reflector.ttl:") ||
 		!strings.Contains(errs, "(2 problems)") {
 		t.Errorf("bad: %d %q", code, errs)
+	}
+	if code, _, errs := h.run(t.Context(), "config", "validate", "-f", one); code != ExitUsage || !strings.Contains(errs, "(1 problem)") {
+		t.Errorf("one problem: %d %q", code, errs)
 	}
 	code, out, _ = h.run(t.Context(), "config", "validate", "-f", bad, "--json")
 	var v validation

@@ -129,7 +129,8 @@ docker: ## Build the container image from deploy/docker/Dockerfile (IMAGE=name:t
 
 .PHONY: staging-up
 staging-up: ## Start the docker compose staging (sender + 3 reflectors; PROFILES="observability perfsonar" adds those)
-	$(STAGING) $(foreach p,$(PROFILES),--profile $(p)) up -d --build --wait
+	$(STAGING) build --pull
+	$(STAGING) $(foreach p,$(PROFILES),--profile $(p)) up -d --wait
 
 .PHONY: staging-down
 staging-down: ## Stop the staging and remove its containers, network and volumes

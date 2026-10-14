@@ -227,7 +227,9 @@ func (g *globals) conn() (*grpc.ClientConn, error) {
 	if g.env.Dial != nil {
 		return g.env.Dial(g.socket)
 	}
-	c, err := grpc.NewClient("unix://"+g.socket, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	// "unix:" takes a relative path as well; after "unix://" the first
+	// element of a relative path would be read as the URI authority.
+	c, err := grpc.NewClient("unix:"+g.socket, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, exitf(ExitUnavailable, "cannot connect to gotwampd at %s: %w", g.socket, err)
 	}

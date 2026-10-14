@@ -116,7 +116,11 @@ func validateConfig(g *globals, cmd *cobra.Command, file string) error {
 		}
 	}
 	if !res.Valid {
-		return exitf(ExitUsage, "%s: configuration is invalid (%d problems)", file, len(res.Problems))
+		noun := "problems"
+		if len(res.Problems) == 1 {
+			noun = "problem"
+		}
+		return exitf(ExitUsage, "%s: configuration is invalid (%d %s)", file, len(res.Problems), noun)
 	}
 	return nil
 }

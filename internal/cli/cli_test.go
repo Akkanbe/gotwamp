@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"net"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -12,6 +13,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	gotwampv1 "github.com/Akkanbe/gotwamp/internal/api/gen/gotwamp/v1"
 )
 
 func TestStatus(t *testing.T) {
@@ -47,6 +50,28 @@ func TestUnavailable(t *testing.T) {
 	code := Main(t.Context(), []string{"--socket", sock, "status", "--timeout", "2s"}, BuildInfo{}, Env{Stderr: &errb})
 	if code != ExitUnavailable || !strings.Contains(errb.String(), "cannot connect to gotwampd at "+sock) {
 		t.Errorf("exit %d: %s", code, errb.String())
+	}
+}
+
+func TestSocketPaths(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	lis, err := net.Listen("unix", "d.sock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := grpc.NewServer()
+	gotwampv1.RegisterDaemonServiceServer(srv, newFakeDaemon())
+	go func() { _ = srv.Serve(lis) }()
+	t.Cleanup(srv.Stop)
+
+	for _, sock := range []string{"d.sock", "./d.sock", filepath.Join(dir, "d.sock")} {
+		var out, errb bytes.Buffer
+		code := Main(t.Context(), []string{"--socket", sock, "status", "--timeout", "5s"}, BuildInfo{},
+			Env{Stdout: &out, Stderr: &errb, Getenv: func(string) string { return "" }})
+		if code != ExitOK || !strings.Contains(out.String(), "uptime") {
+			t.Errorf("--socket %s: exit %d: %s%s", sock, code, out.String(), errb.String())
+		}
 	}
 }
 
