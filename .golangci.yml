@@ -1,0 +1,72 @@
+# golangci-lint v2 configuration.
+# Policy: the standard linter set plus errcheck, gosec and revive.
+# Generated code (internal/api/gen) is excluded.
+version: "2"
+
+run:
+  go: "1.26"
+
+linters:
+  default: standard
+  enable:
+    - errcheck
+    - gosec
+    - revive
+  settings:
+    revive:
+      # revive's recommended rule set; "exported" enforces doc comments on
+      # exported identifiers.
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: empty-block
+        - name: error-naming
+        - name: error-return
+        - name: error-strings
+        - name: errorf
+        - name: exported
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: redefines-builtin-id
+        - name: superfluous-else
+        - name: time-naming
+        - name: unexported-return
+        - name: unreachable-code
+        - name: unused-parameter
+        - name: var-declaration
+        - name: var-naming
+  exclusions:
+    generated: strict
+    presets:
+      - std-error-handling
+    paths:
+      - internal/api/gen
+    rules:
+      # Tests are not attack surface: seeded math/rand (G404), fixture paths
+      # (G304) and truncating conversions that build test data (G115) are
+      # intended there.
+      - path: _test\.go
+        linters:
+          - gosec
+      # internal/twamp is the wire encoding layer: narrowing conversions to
+      # fixed-width fields (offsets, masks, NTP seconds/fraction, Error
+      # Estimate scale/multiplier) are its substance and are bounds-checked by
+      # construction, so G115 reports there are false positives. G115 stays
+      # enabled everywhere else.
+      - path: ^internal/twamp/
+        linters:
+          - gosec
+        text: G115
+
+formatters:
+  enable:
+    - gofumpt
+  exclusions:
+    generated: strict
+    paths:
+      - internal/api/gen

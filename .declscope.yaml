@@ -1,0 +1,5 @@
+# declscope runs with its default rules (boundary, surplus: strict,
+# unused: strict; naming off). Only generated code is left out.
+filter:
+  omit:
+    - internal/api/gen/**

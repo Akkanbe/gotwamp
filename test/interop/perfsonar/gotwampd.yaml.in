@@ -1,0 +1,28 @@
+# gotwampd configuration for the perfSONAR interoperability script (run.sh).
+# run.sh replaces @WORK@ with its scratch directory and @PORT@ with the
+# TWAMP-Control port gotwampd listens on.
+version: 1
+daemon:
+  api:
+    socket: "@WORK@/gotwampd.sock"
+    socket_mode: "0600"
+  metrics:
+    listen: ""
+  log:
+    level: info
+    format: text
+sender:
+  enabled: true
+  keys_file: "@WORK@/keys.pfs"           # conf/twamp-server-test-only.pfs, identity gotwamp
+  defaults:
+    mode: full
+    count: 100
+    interval: 20ms
+reflector:
+  enabled: true
+  control:
+    listen: ["127.0.0.1:@PORT@", "[::1]:@PORT@"]
+    keys_file: "@WORK@/keys.pfs"         # offers unauthenticated, authenticated, encrypted and mixed
+  light:
+    listeners:
+      - listen: "127.0.0.1:@LIGHTPORT@"

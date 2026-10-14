@@ -1,0 +1,29 @@
+# gotwampd configuration installed by the deb/rpm packages.
+# Every key and its default is in docs/ops (SPEC §9.2); unset keys take the
+# defaults. Check changes with: gotwamp config validate -f /etc/gotwamp/gotwampd.yaml
+version: 1
+
+daemon:
+  api:
+    socket: /run/gotwamp/gotwampd.sock
+    socket_mode: "0660"
+    socket_group: gotwamp
+  metrics:
+    listen: "127.0.0.1:9862"       # Prometheus /metrics; empty disables it
+  log:
+    level: info
+    format: json
+
+sender:
+  enabled: true
+
+reflector:
+  enabled: true
+  control:
+    listen: ["0.0.0.0:862", "[::]:862"]
+    acl: []                         # CIDR allow list; empty allows everyone
+  light:
+    listeners:
+      - listen: "0.0.0.0:862"
+      - listen: "[::]:862"
+    acl: []

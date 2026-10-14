@@ -1,0 +1,11 @@
+# Prometheus of the staging environment: every gotwampd every 5 s.
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+scrape_configs:
+  - job_name: gotwampd
+    static_configs:
+      - targets: ["sender:9862"]
+        labels: {role: sender}
+      - targets: ["reflector1:9862", "reflector2:9862", "reflector3:9862"]
+        labels: {role: reflector}

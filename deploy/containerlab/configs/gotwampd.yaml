@@ -1,0 +1,29 @@
+# gotwampd in the containerlab interoperability lab: sender and reflector,
+# Full and Light, on every address. Peers reach it on 10.10.X.1 / fd00:10:X::1.
+version: 1
+daemon:
+  api:
+    socket: /run/gotwamp/gotwampd.sock
+  metrics:
+    listen: "0.0.0.0:9862"
+  log:
+    level: debug
+    format: json
+sender:
+  enabled: true
+  defaults:
+    count: 100
+    interval: 100ms
+reflector:
+  enabled: true
+  control:
+    listen: ["0.0.0.0:862", "[::]:862"]
+    # Junos and SR Linux request Receiver Ports of 862 or 49152-65535.
+    test_port_range: "49152-57343"
+  light:
+    listeners:
+      - listen: "0.0.0.0:862"
+      - listen: "[::]:862"
+      # Nokia SR OS / SR Linux STAMP reflector ports, for senders that use them.
+      - listen: "0.0.0.0:64364"
+      - listen: "[::]:64364"

@@ -1,0 +1,16 @@
+# Lab image for containerlab: the binaries of the distributed image
+# (make docker IMAGE=gotwamp:dev) on Debian, so that the topology can assign
+# addresses with ip(8) and run gotwamp inside the node.
+#
+#   docker build -f deploy/containerlab/Dockerfile.lab -t gotwamp-lab:dev deploy/containerlab
+ARG GOTWAMP_IMAGE=gotwamp:dev
+FROM ${GOTWAMP_IMAGE} AS gotwamp
+
+FROM debian:12-slim
+RUN apt-get update && apt-get install -y --no-install-recommends iproute2 iputils-ping tcpdump \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=gotwamp /usr/bin/gotwampd /usr/bin/gotwamp /usr/bin/
+RUN mkdir -p /run/gotwamp /var/lib/gotwamp /etc/gotwamp
+ENV GOTWAMP_SOCKET=/run/gotwamp/gotwampd.sock
+ENTRYPOINT ["/usr/bin/gotwampd"]
+CMD ["--config", "/etc/gotwamp/gotwampd.yaml"]

@@ -1,0 +1,12 @@
+# twampd resource limits for the gotwamp interoperability tests: open
+# (unauthenticated) mode for everyone; the authenticated, encrypted and mixed
+# modes for the identities of twamp-server.pfs, under the same class.
+limit root with disk=0,\
+		bandwidth=0,\
+		delete_on_fetch=on,\
+		allow_open_mode=on
+limit regular with parent=root,\
+		disk=10G,\
+		bandwidth=0,\
+		allow_open_mode=on
+assign default regular

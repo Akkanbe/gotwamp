@@ -1,0 +1,90 @@
+# gotwampd of the staging sender: monitoring sessions to the three
+# reflectors, Light and Full, IPv4 and IPv6, in the configurations each
+# reflector is set up for (docs/ops/staging.md).
+version: 1
+
+daemon:
+  api:
+    socket: /run/gotwamp/gotwampd.sock
+    socket_mode: "0666"              # staging: the host user reaches it through deploy/staging/run/
+    socket_group: ""
+  metrics:
+    listen: "[::]:9862"
+  log:
+    level: info
+    format: text
+  limits:
+    result_history: 360              # an hour of 10 s windows
+
+sender:
+  enabled: true
+  keys_file: /run/gotwamp-keys/keys.pfs   # copied from keys/staging-test-only.pfs by the entrypoint
+  defaults:
+    timeout: 2s
+  sessions:
+    # reflector1: the default reflector.
+    - name: r1-full
+      target: reflector1
+      ipv: "4"
+      mode: full
+      schedule: {type: periodic, frequency: 10s, jitter: 2s}
+      count: 100
+      interval: 20ms
+      labels: {reflector: reflector1, family: ipv4}
+    - name: r1-light-v6
+      target: reflector1
+      ipv: "6"
+      mode: light
+      schedule: {type: continuous, window: 10s}
+      interval: 100ms
+      labels: {reflector: reflector1, family: ipv6}
+    # reflector2: authentication required.
+    - name: r2-full-enc
+      target: reflector2
+      ipv: "4"
+      mode: full
+      security: encrypted
+      key_id: staging
+      schedule: {type: periodic, frequency: 10s, jitter: 2s}
+      count: 100
+      interval: 20ms
+      padding: 64                    # symmetrical in the authenticated modes
+      labels: {reflector: reflector2, family: ipv4}
+    - name: r2-light
+      target: reflector2
+      ipv: "4"
+      mode: light
+      schedule: {type: continuous, window: 10s}
+      interval: 100ms
+      labels: {reflector: reflector2, family: ipv4}
+    # reflector3: STAMP and the TWAMP extensions.
+    - name: r3-stamp
+      target: reflector3
+      ipv: "4"
+      mode: light
+      stamp: true
+      ssid: 3
+      schedule: {type: continuous, window: 10s}
+      interval: 100ms
+      labels: {reflector: reflector3, family: ipv4}
+    - name: r3-full-ext
+      target: reflector3
+      ipv: "6"
+      mode: full
+      extensions: [individual_session_control, symmetrical_size, reflect_octets]
+      octets_to_reflect: 48879       # 0xbeef, echoed in Accept-Session
+      padding_to_reflect: 16
+      padding: 64
+      schedule: {type: periodic, frequency: 10s, jitter: 2s}
+      count: 100
+      interval: 20ms
+      labels: {reflector: reflector3, family: ipv6}
+
+reflector:
+  enabled: false
+
+store:
+  backend: sqlite                    # gotwamp stats NAME --since 1h reads it
+  sqlite:
+    path: /var/lib/gotwamp/results.db
+    retention: 72h

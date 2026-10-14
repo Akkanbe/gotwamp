@@ -1,0 +1,8 @@
+# Session-Sender packet, unauthenticated, RFC 6038 Symmetrical Size
+# (§5.1.4): 14-octet header, 27 MBZ octets, then Padding Length (8) octets
+00 00 00 07                                         # 0  Sequence Number = 7
+ee 6c 15 80 80 00 00 00                             # 4  Timestamp = 2026-10-04T00:00:00.5Z
+8a d2                                               # 12 Error Estimate = S=1 Scale=10 Multiplier=210
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00     # 14 MBZ (27)
+00 00 00 00 00 00 00 00 00 00 00
+00 01 02 03 04 05 06 07                             # 41 Packet Padding (8)

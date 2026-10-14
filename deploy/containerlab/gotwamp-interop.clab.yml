@@ -1,0 +1,78 @@
+# Interoperability lab for gotwamp (PLAN §8.2, docs/ops/interop.md).
+#
+#   make docker IMAGE=gotwamp:dev            # the image under test
+#   docker build -f deploy/containerlab/Dockerfile.lab -t gotwamp-lab:dev deploy/containerlab
+#   sudo containerlab deploy -t deploy/containerlab/gotwamp-interop.clab.yml
+#   sudo containerlab destroy -t deploy/containerlab/gotwamp-interop.clab.yml
+#
+# gotwamp joins as a container holding the binaries of the distributed image
+# (deploy/docker/Dockerfile) on Debian, since the topology needs ip(8) in the
+# node and the distroless image has none (Dockerfile.lab). Every peer has its own point-to-point link
+# to gotwamp, with IPv4 and IPv6 (Junos OS supports managed TWAMP over IPv4
+# only). Impair a link with containerlab's netem tool, for example:
+#
+#   sudo containerlab tools netem set -n clab-gotwamp-interop-gotwamp -i eth1 --delay 10ms --loss 1
+#
+# Addressing (gotwamp side .1 / ::1, peer side .2 / ::2):
+#   eth1  gotwamp <-> perfsonar   10.10.1.0/24  fd00:10:1::/64
+#   eth2  gotwamp <-> srl         10.10.2.0/24  fd00:10:2::/64
+#   eth3  gotwamp <-> vjunos      10.10.3.0/24  fd00:10:3::/64
+#
+# The SR Linux and vJunos-router nodes need their images (see below); remove
+# a node and its link when its image is not available.
+name: gotwamp-interop
+
+topology:
+  nodes:
+    gotwamp:
+      kind: linux
+      image: ${GOTWAMP_LAB_IMAGE:=gotwamp-lab:dev}
+      binds:
+        - configs/gotwampd.yaml:/etc/gotwamp/gotwampd.yaml:ro
+      exec:
+        - ip addr add 10.10.1.1/24 dev eth1
+        - ip addr add fd00:10:1::1/64 dev eth1 nodad
+        - ip addr add 10.10.2.1/24 dev eth2
+        - ip addr add fd00:10:2::1/64 dev eth2 nodad
+        - ip addr add 10.10.3.1/24 dev eth3
+        - ip addr add fd00:10:3::1/64 dev eth3 nodad
+
+    # perfSONAR twampd (Full server) and twping (Full client). TWAMP Light is
+    # not supported by perfSONAR.
+    perfsonar:
+      kind: linux
+      image: ${PERFSONAR_IMAGE:=perfsonar/testpoint:latest}
+      entrypoint: /usr/sbin/twampd
+      cmd: -Z -f -a O -c /etc/gotwamp-interop -S [::]:862
+      binds:
+        - ../../test/interop/perfsonar/conf/twamp-server.conf:/etc/gotwamp-interop/twamp-server.conf:ro
+        - ../../test/interop/perfsonar/conf/twamp-server.limits:/etc/gotwamp-interop/twamp-server.limits:ro
+        - ../../test/interop/perfsonar/conf/twamp-server-test-only.pfs:/etc/gotwamp-interop/twamp-server.pfs:ro
+      exec:
+        - ip addr add 10.10.1.2/24 dev eth1
+        - ip addr add fd00:10:1::2/64 dev eth1 nodad
+
+    # Nokia SR Linux: Full TWAMP server + reflector and STAMP session-reflector
+    # (TWAMP Light compatible), STAMP sender via OAM-PM IP sessions (24.7+).
+    # The default type (ixr-d3l) and ixr-d2l have no "oam" tree in 26.7.2
+    # (checked with docker); ixr-x1b is a service-provider platform where the
+    # TWAMP/STAMP features are expected, still to be confirmed in this lab.
+    srl:
+      kind: nokia_srlinux
+      image: ${SRL_IMAGE:=ghcr.io/nokia/srlinux:latest}
+      type: ${SRL_TYPE:=ixr-x1b}
+      startup-config: configs/srl.cli
+
+    # Juniper vJunos-router (vrnetlab image, free download from Juniper):
+    # managed TWAMP client + server and TWAMP Light client + server.
+    # Build the image with vrnetlab and set VJUNOS_IMAGE; boot takes 5-10 min.
+    # vrnetlab's default configuration (login admin / admin@123) is kept;
+    # load configs/vjunos.set after boot (see the file).
+    vjunos:
+      kind: juniper_vjunosrouter
+      image: ${VJUNOS_IMAGE:=vrnetlab/juniper_vjunos-router:23.4R2-S2.1}
+
+  links:
+    - endpoints: ["gotwamp:eth1", "perfsonar:eth1"]
+    - endpoints: ["gotwamp:eth2", "srl:e1-1"]
+    - endpoints: ["gotwamp:eth3", "vjunos:eth1"]

@@ -1,0 +1,2 @@
+# The sender's API socket, bind-mounted for a gotwamp on the host.
+/run/

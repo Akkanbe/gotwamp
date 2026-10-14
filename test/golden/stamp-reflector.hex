@@ -1,0 +1,16 @@
+# STAMP Session-Reflector packet answering stamp-sender.hex (RFC 8762
+# §4.3.1): TWAMP's fields at TWAMP's offsets, the SSID copied, 41-43 MBZ,
+# and the TLVs copied back with the U flag (none is implemented)
+00 00 00 00                                         # 0  Sequence Number = 0 (stateful)
+ee 6c 15 80 80 01 00 00                             # 4  Timestamp (T3)
+00 01                                               # 12 Error Estimate
+12 34                                               # 14 SSID, copied
+ee 6c 15 80 80 00 80 00                             # 16 Receive Timestamp (T2)
+00 00 00 07                                         # 24 Session-Sender Sequence Number = 7
+ee 6c 15 80 80 00 00 00                             # 28 Session-Sender Timestamp
+8a d2                                               # 36 Session-Sender Error Estimate
+00 00                                               # 38 MBZ (2)
+40                                                  # 40 Ses-Sender TTL = 64
+00 00 00                                            # 41 MBZ (3)
+80 01 00 04 de ad be ef                             # 44 TLVs as received, U set
+80 63 00 02 ab cd

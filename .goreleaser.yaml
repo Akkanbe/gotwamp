@@ -1,0 +1,101 @@
+# goreleaser configuration (PLAN §3, M6): linux amd64/arm64 binaries,
+# tarballs, deb/rpm packages with the systemd unit, and checksums.
+#
+#   make release-snapshot     # local build into dist/, no publishing
+#   goreleaser release        # on a pushed tag, from CI
+#
+# The container image is built from deploy/docker/Dockerfile.
+version: 2
+project_name: gotwamp
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: gotwampd
+    main: ./cmd/gotwampd
+    binary: gotwampd
+    env: [CGO_ENABLED=0]
+    goos: [linux]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X main.version={{ .Version }} -X main.commit={{ .ShortCommit }}
+  - id: gotwamp
+    main: ./cmd/gotwamp
+    binary: gotwamp
+    env: [CGO_ENABLED=0]
+    goos: [linux]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X main.version={{ .Version }} -X main.commit={{ .ShortCommit }}
+
+archives:
+  - id: tarball
+    ids: [gotwampd, gotwamp]
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+      - CHANGELOG.md
+      - deploy/systemd/gotwampd.service
+      - deploy/config/gotwampd.yaml
+
+nfpms:
+  - id: packages
+    ids: [gotwampd, gotwamp]
+    package_name: gotwamp
+    file_name_template: "{{ .ConventionalFileName }}"
+    vendor: gotwamp
+    homepage: https://github.com/Akkanbe/gotwamp
+    maintainer: gotwamp maintainers <https://github.com/Akkanbe/gotwamp>
+    description: TWAMP (RFC 5357) sender and reflector daemon with CLI, Full and Light.
+    license: Apache-2.0
+    formats: [deb, rpm]
+    bindir: /usr/bin
+    section: net
+    priority: optional
+    contents:
+      - src: deploy/systemd/gotwampd.service
+        dst: /usr/lib/systemd/system/gotwampd.service
+        file_info:
+          mode: 0644
+      - src: deploy/config/gotwampd.yaml
+        dst: /etc/gotwamp/gotwampd.yaml
+        type: config|noreplace
+        file_info:
+          mode: 0640
+          group: gotwamp
+      - dst: /etc/gotwamp
+        type: dir
+        file_info:
+          mode: 0750
+          group: gotwamp
+    scripts:
+      preinstall: deploy/nfpm/preinstall.sh
+      postinstall: deploy/nfpm/postinstall.sh
+      preremove: deploy/nfpm/preremove.sh
+      postremove: deploy/nfpm/postremove.sh
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  github:
+    owner: Akkanbe
+    name: gotwamp
+  draft: true

@@ -1,0 +1,133 @@
+# gotwamp staging environment (docs/ops/staging.md): one sender and three
+# reflectors on a dual-stack bridge, each able to shape its traffic with
+# tc / netem (netem.sh), and optional perfSONAR and Prometheus + Grafana.
+#
+#   make staging-up                       # build and start
+#   deploy/staging/netem.sh reflector2 delay 10ms 2ms
+#   make staging-ping                     # Light and Full to every reflector
+#   make staging-down
+#
+#   docker compose -f deploy/staging/docker-compose.yml --profile observability up -d
+#   docker compose -f deploy/staging/docker-compose.yml --profile perfsonar up -d
+name: gotwamp-staging
+
+x-gotwampd: &gotwampd
+  image: gotwamp-staging:dev
+  build:
+    context: ../..
+    dockerfile: deploy/staging/Dockerfile
+  # NET_ADMIN for tc / netem (netem.sh runs tc in the container as root).
+  # gotwampd runs as root here so that the bind-mounted socket directory and
+  # tc need no further setup: a staging image, never a production one.
+  cap_add: [NET_ADMIN]
+  restart: unless-stopped
+  init: true
+
+services:
+  sender:
+    <<: *gotwampd
+    hostname: sender
+    volumes:
+      - ./config/sender.yaml:/etc/gotwamp/gotwampd.yaml:ro
+      - ./keys/staging-test-only.pfs:/etc/gotwamp/keys.pfs:ro
+      - ./run/sender:/run/gotwamp            # API socket for a gotwamp on the host
+      - sender-state:/var/lib/gotwamp        # SQLite result store
+    ports:
+      - "127.0.0.1:19862:9862"              # Prometheus /metrics
+    networks:
+      staging: {ipv4_address: 172.31.80.10, ipv6_address: "fd00:6a77:7374::10"}
+    depends_on:
+      reflector1: {condition: service_healthy}
+      reflector2: {condition: service_healthy}
+      reflector3: {condition: service_healthy}
+
+  reflector1:
+    <<: *gotwampd
+    hostname: reflector1
+    volumes:
+      - ./config/reflector1.yaml:/etc/gotwamp/gotwampd.yaml:ro
+    ports:
+      - "127.0.0.1:19871:9862"
+    networks:
+      staging: {ipv4_address: 172.31.80.11, ipv6_address: "fd00:6a77:7374::11"}
+
+  reflector2:
+    <<: *gotwampd
+    hostname: reflector2
+    volumes:
+      - ./config/reflector2.yaml:/etc/gotwamp/gotwampd.yaml:ro
+      - ./keys/staging-test-only.pfs:/etc/gotwamp/keys.pfs:ro
+    ports:
+      - "127.0.0.1:19872:9862"
+    networks:
+      staging: {ipv4_address: 172.31.80.12, ipv6_address: "fd00:6a77:7374::12"}
+
+  reflector3:
+    <<: *gotwampd
+    hostname: reflector3
+    volumes:
+      - ./config/reflector3.yaml:/etc/gotwamp/gotwampd.yaml:ro
+    ports:
+      - "127.0.0.1:19873:9862"
+    networks:
+      staging: {ipv4_address: 172.31.80.13, ipv6_address: "fd00:6a77:7374::13"}
+
+  # A third-party reflector: twampd of perfSONAR, as in make interop
+  # (test/interop/perfsonar), with its keys (identity gotwamp).
+  perfsonar:
+    profiles: [perfsonar]
+    image: ${PERFSONAR_IMAGE:-perfsonar/testpoint:latest}
+    hostname: perfsonar
+    cap_add: [NET_ADMIN]
+    entrypoint: ["/usr/sbin/twampd"]
+    command: ["-Z", "-f", "-a", "AEMO", "-c", "/etc/gotwamp-interop", "-S", "[::]:862"]
+    volumes:
+      # The TEST ONLY keys of make interop, under the names twampd reads.
+      - ../../test/interop/perfsonar/conf/twamp-server.conf:/etc/gotwamp-interop/twamp-server.conf:ro
+      - ../../test/interop/perfsonar/conf/twamp-server.limits:/etc/gotwamp-interop/twamp-server.limits:ro
+      - ../../test/interop/perfsonar/conf/twamp-server-test-only.pfs:/etc/gotwamp-interop/twamp-server.pfs:ro
+    healthcheck:
+      test: ["CMD-SHELL", "twping -c 1 -i 0.1 -L 2 -Q localhost:862"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+    networks:
+      staging: {ipv4_address: 172.31.80.20, ipv6_address: "fd00:6a77:7374::20"}
+
+  prometheus:
+    profiles: [observability]
+    image: ${PROMETHEUS_IMAGE:-prom/prometheus:latest}
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=2d"]
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "127.0.0.1:19090:9090"
+    networks:
+      staging: {ipv4_address: 172.31.80.30, ipv6_address: "fd00:6a77:7374::30"}
+
+  grafana:
+    profiles: [observability]
+    image: ${GRAFANA_IMAGE:-grafana/grafana-oss:latest}
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"      # staging only
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/gotwamp.json
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../../docs/ops/grafana-dashboard.json:/var/lib/grafana/dashboards/gotwamp.json:ro
+    ports:
+      - "127.0.0.1:13000:3000"
+    networks:
+      staging: {ipv4_address: 172.31.80.31, ipv6_address: "fd00:6a77:7374::31"}
+    depends_on: [prometheus]
+
+networks:
+  staging:
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: 172.31.80.0/24
+        - subnet: fd00:6a77:7374::/64
+
+volumes:
+  sender-state:

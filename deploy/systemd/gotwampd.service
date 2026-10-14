@@ -1,0 +1,69 @@
+# systemd unit for gotwampd (SPEC §9.10).
+#
+# The daemon runs as the unprivileged user "gotwamp". Binding TWAMP's port
+# 862 (tcp/udp) is the only privilege it needs; timestamping (SO_TIMESTAMPING),
+# TTL/TOS socket options and reading the clock state (adjtimex) need none.
+# Add CLI users to the "gotwamp" group to give them the API socket.
+
+[Unit]
+Description=gotwamp TWAMP sender and reflector daemon
+Documentation=https://github.com/Akkanbe/gotwamp
+Wants=network-online.target
+After=network-online.target time-sync.target
+
+[Service]
+Type=simple
+User=gotwamp
+Group=gotwamp
+ExecStart=/usr/bin/gotwampd --config /etc/gotwamp/gotwampd.yaml
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5s
+# A configuration error (exit 1) does not go away by restarting: stop and
+# let journalctl show why (gotwamp config validate checks a fix).
+RestartPreventExitStatus=1
+
+# /run/gotwamp holds the API socket (0660, group gotwamp); /var/lib/gotwamp
+# holds the JSON Lines results.
+RuntimeDirectory=gotwamp
+RuntimeDirectoryMode=0750
+StateDirectory=gotwamp
+StateDirectoryMode=0750
+ConfigurationDirectory=gotwamp
+UMask=0007
+LimitNOFILE=65536
+
+# Only the capability to bind port 862.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=yes
+
+# Hardening.
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHostname=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=yes
+# Realtime scheduling stays off; docs/ops/troubleshooting.md shows a drop-in
+# for Nice= or CPUSchedulingPolicy=fifo (which needs RestrictRealtime=no).
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+# Reading the clock state with adjtimex (modes 0) is not in @system-service.
+# ProtectClock= would forbid it, so it is left off on purpose.
+SystemCallFilter=adjtimex clock_adjtime
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

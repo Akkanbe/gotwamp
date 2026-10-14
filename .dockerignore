@@ -1,0 +1,14 @@
+# Keep the Docker build context to what the image needs.
+.git
+.github
+.claude
+bin
+dist
+build
+docs
+test
+*.out
+*.pcap
+*.pcapng
+*.jsonl
+coverage.html

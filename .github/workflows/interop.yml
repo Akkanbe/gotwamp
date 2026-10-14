@@ -1,0 +1,43 @@
+name: interop
+
+# Nightly interoperability tests against perfSONAR twampd/twping (PLAN §8,
+# cases I-01 to I-04). ci.yml covers build, unit tests and lint.
+on:
+  schedule:
+    - cron: "47 18 * * *"
+  workflow_dispatch:
+    inputs:
+      cli:
+        description: Also run the CLI script (gotwampd + gotwamp ping); needs TWAMP Full in gotwampd
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  perfsonar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Pull the perfSONAR image
+        run: docker compose -f test/interop/perfsonar/compose.yaml pull
+      - name: perfSONAR interoperability
+        env:
+          INTEROP_CLI: ${{ inputs.cli && '1' || '' }}
+          INTEROP_KEEP: "1"
+        run: make interop
+      - name: perfSONAR logs
+        if: failure()
+        run: docker logs gotwamp-perfsonar
+      - name: Stop perfSONAR
+        if: always()
+        run: docker compose -f test/interop/perfsonar/compose.yaml down

@@ -1,0 +1,9 @@
+# TEST ONLY: dummy passphrases, never use in production.
+#
+# Shared secret of the staging environment (twamp-server.pfs format:
+# identity, then the passphrase in hex). The passphrase is "gotwamp-staging",
+# published on purpose.
+staging 676f7477616d702d73746167696e67
+# The identity of the perfsonar profile's twampd
+# (test/interop/perfsonar/conf/twamp-server-test-only.pfs, "gotwamp-interop").
+gotwamp 676f7477616d702d696e7465726f70

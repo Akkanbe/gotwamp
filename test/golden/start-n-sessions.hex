@@ -1,0 +1,7 @@
+# Start-N-Sessions, 32 + 16 x 2 octets (RFC 5938 §3.2): two sessions
+07                                                  # 0  Command Number = 7
+00 00 00 00 00 00 00 00 00 00 00                    # 1  MBZ (11)
+00 00 00 02                                         # 12 Number of Sessions = 2
+c0 00 02 01 ee 6c 15 80 80 00 00 00 00 00 00 01     # 16 SID 1
+c0 00 02 01 ee 6c 15 80 80 00 00 00 00 00 00 02     # 32 SID 2
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00     # 48 HMAC (zero, unauthenticated)

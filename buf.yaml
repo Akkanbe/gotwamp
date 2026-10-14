@@ -1,0 +1,17 @@
+# buf configuration for the gotwamp gRPC API (package gotwamp.v1).
+version: v2
+modules:
+  - path: api/proto
+lint:
+  use:
+    - STANDARD
+  ignore_only:
+    # RunTest and WatchResults both stream TestEvent, as the API specification
+    # defines: one event type is shared by ad-hoc runs and subscriptions.
+    RPC_REQUEST_RESPONSE_UNIQUE:
+      - api/proto/gotwamp/v1/sender.proto
+    RPC_RESPONSE_STANDARD_NAME:
+      - api/proto/gotwamp/v1/sender.proto
+breaking:
+  use:
+    - FILE

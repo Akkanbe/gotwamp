@@ -1,0 +1,4 @@
+# Start-Ack, 32 octets (RFC 4656 §3.7)
+05                                                  # 0  Accept = 5 (temporary resource limitation)
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00        # 1  MBZ (15)
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00     # 16 HMAC (16)

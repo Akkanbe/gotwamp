@@ -1,0 +1,17 @@
+# Session-Reflector packet, unauthenticated, 41 + 73 octets (RFC 5357 §4.2.1):
+# the reply to a 114-octet sender packet whose padding counted 00..63
+00 00 00 00                                         # 0  Sequence Number = 0
+00 00 00 00 00 00 00 00                             # 4  Timestamp (T3) = 0, written just before sending
+3f ff                                               # 12 Error Estimate = unknown (Scale 63, Multiplier 255)
+00 00                                               # 14 MBZ (2)
+83 aa 7e 81 40 00 00 00                             # 16 Receive Timestamp (T2) = 1970-01-01T00:00:01.25Z
+ff ff ff ff                                         # 24 Sender Sequence Number = 2^32-1
+83 aa 7e 81 00 00 00 00                             # 28 Sender Timestamp (T1) = 1970-01-01T00:00:01Z
+80 01                                               # 36 Sender Error Estimate = S=1 Multiplier=1
+00 00                                               # 38 MBZ (2)
+40                                                  # 40 Sender TTL = 64
+00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f     # 41 Packet Padding (73) = sender padding 0..72,
+10 11 12 13 14 15 16 17 18 19 1a 1b 1c 1d 1e 1f     #    highest-numbered 27 octets dropped
+20 21 22 23 24 25 26 27 28 29 2a 2b 2c 2d 2e 2f
+30 31 32 33 34 35 36 37 38 39 3a 3b 3c 3d 3e 3f
+40 41 42 43 44 45 46 47 48

@@ -1,0 +1,26 @@
+# gotwampd of staging reflector1 (docs/ops/staging.md).
+version: 1
+
+daemon:
+  api:
+    socket: /run/gotwamp/gotwampd.sock
+    socket_group: ""
+  metrics:
+    listen: "[::]:9862"
+  log:
+    level: info
+    format: text
+
+sender:
+  enabled: false
+
+reflector:
+  enabled: true
+  control:
+    listen: ["0.0.0.0:862", "[::]:862"]
+    # the defaults: unauthenticated, and every TWAMP extension offered
+  light:
+    listeners:
+      - listen: "0.0.0.0:862"
+      - listen: "[::]:862"
+    # the defaults: a sequence per flow, DSCP copied

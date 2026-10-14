@@ -1,0 +1,559 @@
+syntax = "proto3";
+
+package gotwamp.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+// Field presence convention used throughout gotwamp.v1:
+//
+// A field that is left unset takes the daemon's default (sender.defaults in
+// the configuration, which in turn defaults to the values of the API
+// specification, Appendix A). Scalars whose zero value is a meaningful
+// explicit choice are declared `optional` so that "unset" and "zero" can be
+// told apart. Duration and Timestamp fields have presence by construction.
+
+// Mode selects TWAMP Full (negotiated through TWAMP-Control) or TWAMP Light.
+enum Mode {
+  // Inherit the default (full).
+  MODE_UNSPECIFIED = 0;
+  // TWAMP with TWAMP-Control negotiation (RFC 5357).
+  MODE_FULL = 1;
+  // TWAMP Light: TWAMP-Test only, no control connection (RFC 5357 Appendix I).
+  MODE_LIGHT = 2;
+}
+
+// AddressFamily selects the IP version used to reach the target.
+enum AddressFamily {
+  // Inherit the default (auto).
+  ADDRESS_FAMILY_UNSPECIFIED = 0;
+  // Use whatever the target resolves to.
+  ADDRESS_FAMILY_AUTO = 1;
+  // IPv4 only.
+  ADDRESS_FAMILY_IPV4 = 2;
+  // IPv6 only.
+  ADDRESS_FAMILY_IPV6 = 3;
+}
+
+// PaddingFill selects the content of the Packet Padding of Session-Sender
+// packets.
+enum PaddingFill {
+  // Inherit the default (auto).
+  PADDING_FILL_UNSPECIFIED = 0;
+  // Pseudo-random for Full, all zero for Light.
+  PADDING_FILL_AUTO = 1;
+  // Pseudo-random octets.
+  PADDING_FILL_RANDOM = 2;
+  // All-zero octets.
+  PADDING_FILL_ZERO = 3;
+}
+
+// SecurityMode is the TWAMP security mode. gotwamp v0.x implements
+// unauthenticated mode only; the other values are reserved and rejected.
+enum SecurityMode {
+  // Inherit the default (unauthenticated).
+  SECURITY_MODE_UNSPECIFIED = 0;
+  // Unauthenticated mode (Modes bit 0).
+  SECURITY_MODE_UNAUTHENTICATED = 1;
+  // Authenticated mode (Modes bit 1).
+  SECURITY_MODE_AUTHENTICATED = 2;
+  // Encrypted mode (Modes bit 2).
+  SECURITY_MODE_ENCRYPTED = 3;
+  // Mixed mode (Modes bit 3, RFC 5618): encrypted control, unauthenticated
+  // test packets.
+  SECURITY_MODE_MIXED = 4;
+}
+
+// StartTime selects the Start Time field sent in Request-TW-Session.
+enum StartTime {
+  // Inherit the default (zero).
+  START_TIME_UNSPECIFIED = 0;
+  // Send zero: the session starts as soon as Start-Sessions is processed.
+  START_TIME_ZERO = 1;
+  // Send the current time.
+  START_TIME_NOW = 2;
+}
+
+// TimestampingMode is the method used to take packet timestamps.
+enum TimestampingMode {
+  // Not known.
+  TIMESTAMPING_MODE_UNSPECIFIED = 0;
+  // Kernel software timestamps (SO_TIMESTAMPING).
+  TIMESTAMPING_MODE_KERNEL = 1;
+  // time.Now() around the socket calls.
+  TIMESTAMPING_MODE_USERSPACE = 2;
+  // The network card's timestamps (SOF_TIMESTAMPING_RX/TX_HARDWARE).
+  TIMESTAMPING_MODE_HARDWARE = 3;
+}
+
+// DuplicateKind tells which path duplicated a packet.
+enum DuplicateKind {
+  // Not a duplicate.
+  DUPLICATE_KIND_UNSPECIFIED = 0;
+  // Same Sender Sequence Number, different Reflector Sequence Number.
+  DUPLICATE_KIND_FORWARD = 1;
+  // Same Sender and Reflector Sequence Numbers.
+  DUPLICATE_KIND_REVERSE = 2;
+}
+
+// RunStage is the stage of a run in which an error occurred.
+enum RunStage {
+  // Not known.
+  RUN_STAGE_UNSPECIFIED = 0;
+  // Establishing the control connection.
+  RUN_STAGE_CONNECT = 1;
+  // Waiting for or validating the Server Greeting.
+  RUN_STAGE_GREETING = 2;
+  // Set-Up-Response / Server-Start exchange.
+  RUN_STAGE_SETUP = 3;
+  // Request-TW-Session / Accept-Session exchange.
+  RUN_STAGE_REQUEST = 4;
+  // Start-Sessions / Start-Ack exchange.
+  RUN_STAGE_START = 5;
+  // Sending and receiving test packets.
+  RUN_STAGE_TEST = 6;
+  // Stop-Sessions.
+  RUN_STAGE_STOP = 7;
+  // A failure inside gotwampd (for example, a recovered panic).
+  RUN_STAGE_INTERNAL = 8;
+}
+
+// ReflectorSequence tells how the reflector numbers its replies.
+enum ReflectorSequence {
+  // Not set: the daemon's sender.defaults apply.
+  REFLECTOR_SEQUENCE_UNSPECIFIED = 0;
+  // The reflector counts its own Sequence Numbers.
+  REFLECTOR_SEQUENCE_STATEFUL = 1;
+  // The reflector copies the Sender Sequence Number (RFC 5357 Appendix I):
+  // no loss split, no reverse reordering.
+  REFLECTOR_SEQUENCE_COPY_SENDER = 2;
+}
+
+// SummaryKind tells what a RunSummary aggregates.
+enum SummaryKind {
+  // Not known.
+  SUMMARY_KIND_UNSPECIFIED = 0;
+  // One run (periodic sessions and ad-hoc tests).
+  SUMMARY_KIND_RUN = 1;
+  // One window of a continuous session.
+  SUMMARY_KIND_WINDOW = 2;
+}
+
+// PortRange is an inclusive range of UDP ports.
+message PortRange {
+  // First port of the range.
+  uint32 first = 1;
+  // Last port of the range, inclusive.
+  uint32 last = 2;
+}
+
+// CompatOptions are the interoperability knobs of a test.
+message CompatOptions {
+  // Send zero Sender/Receiver Address in Request-TW-Session (NAT traversal).
+  optional bool zero_addresses = 1;
+  // Start Time field of Request-TW-Session.
+  StartTime start_time = 2;
+  // Accept a Receiver Port other than the requested one in Accept-Session.
+  optional bool accept_alternate_port = 3;
+  // Accept Error Estimates whose Multiplier is zero as "error unknown".
+  optional bool tolerate_zero_multiplier = 4;
+  // DSCP of the control connection, 0-63.
+  optional uint32 control_dscp = 5;
+  // Delay before sending Stop-Sessions.
+  google.protobuf.Duration end_delay = 6;
+  // Range the Sender Port is picked from when sender_port is zero.
+  PortRange sender_port_range = 7;
+  // How the reflector numbers its replies.
+  ReflectorSequence reflector_sequence = 8;
+}
+
+// TestSpec describes one test stream: what to measure and how.
+message TestSpec {
+  // Host name or IP address of the reflector.
+  string target = 1;
+  // Full or Light.
+  Mode mode = 2;
+  // Address family used to reach the target.
+  AddressFamily ipv = 3;
+  // Source address. Empty selects it from the route.
+  string source_address = 4;
+  // TWAMP-Control TCP port (Full). Zero means the default, 862.
+  uint32 control_port = 5;
+  // Reflector UDP port. Zero means the Sender Port (Full) or 862 (Light).
+  optional uint32 receiver_port = 6;
+  // Sender UDP port. Zero picks one from sender_port_range.
+  optional uint32 sender_port = 7;
+  // Number of packets per run. Zero means continuous (not allowed in RunTest).
+  optional uint32 count = 8;
+  // Interval between packets.
+  google.protobuf.Duration interval = 9;
+  // Loss timeout, also sent as the Timeout field of Request-TW-Session.
+  google.protobuf.Duration timeout = 10;
+  // Packet Padding length in octets.
+  optional uint32 padding = 11;
+  // Content of the Packet Padding.
+  PaddingFill padding_fill = 12;
+  // DSCP of test packets, 0-63.
+  optional uint32 dscp = 13;
+  // TTL / Hop Limit of test packets, 1-255. Zero means the default, 255.
+  uint32 ttl = 14;
+  // Security mode. Only unauthenticated is supported.
+  SecurityMode security = 15;
+  // Read timeout of each TWAMP-Control exchange.
+  google.protobuf.Duration control_timeout = 16;
+  // Interoperability knobs.
+  CompatOptions compat = 17;
+  // Read the DSCP and ECN the reflector received from its replies (RFC 7750;
+  // Light only).
+  optional bool dscp_ecn_monitoring = 18;
+  // KeyID of the shared secret in gotwampd's sender.keys_file, for the
+  // modes other than unauthenticated (RFC 4656: up to 80 octets of UTF-8).
+  string key_id = 19;
+  // TWAMP extensions a Full test uses where the server offers them. Empty
+  // keeps sender.defaults.
+  repeated Extension extensions = 20;
+  // Reflect Octets fields of a Full test's request (RFC 6038 §4.2): two
+  // octets (0-65535) the server echoes in Accept-Session ("Octets to be
+  // reflected"), and the length of padding the reflector returns unchanged
+  // ("Length of padding to reflect"). Either non-zero asks for
+  // EXTENSION_REFLECT_OCTETS.
+  optional uint32 octets_to_reflect = 21;
+  optional uint32 padding_to_reflect = 22;
+  // Send STAMP Session-Sender packets (RFC 8762; Light only).
+  optional bool stamp = 23;
+  // STAMP Session-Sender Identifier (RFC 8972), 0-65535; 0 sends none.
+  optional uint32 ssid = 24;
+}
+
+// Extension is a TWAMP extension negotiated in the Modes field.
+enum Extension {
+  // Not an extension.
+  EXTENSION_UNSPECIFIED = 0;
+  // Individual Session Control (RFC 5938, Modes bit 4).
+  EXTENSION_INDIVIDUAL_SESSION_CONTROL = 1;
+  // Reflect Octets (RFC 6038, Modes bit 5).
+  EXTENSION_REFLECT_OCTETS = 2;
+  // Symmetrical Size (RFC 6038, Modes bit 6).
+  EXTENSION_SYMMETRICAL_SIZE = 3;
+}
+
+// ErrorEstimate is a decoded TWAMP Error Estimate (RFC 4656 §4.1.2).
+message ErrorEstimate {
+  // S bit: the clock is synchronized to an external source.
+  bool synchronized = 1;
+  // Z bit: the timestamp is in PTPv2 format (RFC 8186) rather than NTP.
+  bool ptp_format = 2;
+  // Scale, 0-63.
+  uint32 scale = 3;
+  // Multiplier, 0-255. Zero is invalid on the wire and means "unknown".
+  uint32 multiplier = 4;
+  // Multiplier * 2^(Scale-32) seconds. Unset when the multiplier is zero.
+  google.protobuf.Duration error = 5;
+}
+
+// Endpoint is one side of a test or control connection.
+message Endpoint {
+  // IP address.
+  string address = 1;
+  // UDP port of the test stream.
+  uint32 port = 2;
+  // TCP port of the control connection (Full only).
+  uint32 control_port = 3;
+}
+
+// PacketResult is the outcome of one reflected packet.
+message PacketResult {
+  // Sender Sequence Number.
+  uint32 seq = 1;
+  // Reflector Sequence Number.
+  uint32 reflector_seq = 2;
+  // T1 used for the computation (the kernel TX timestamp when available).
+  google.protobuf.Timestamp t1 = 3;
+  // T2: reflector receive time.
+  google.protobuf.Timestamp t2 = 4;
+  // T3: reflector send time.
+  google.protobuf.Timestamp t3 = 5;
+  // T4: sender receive time.
+  google.protobuf.Timestamp t4 = 6;
+  // (T4 - T1) - (T3 - T2).
+  google.protobuf.Duration rtt = 7;
+  // T4 - T1.
+  google.protobuf.Duration rtt_raw = 8;
+  // T2 - T1.
+  google.protobuf.Duration fwd_delay = 9;
+  // T4 - T3.
+  google.protobuf.Duration rev_delay = 10;
+  // T3 - T2.
+  google.protobuf.Duration reflector_delay = 11;
+  // Whether fwd_delay and rev_delay are valid (both clocks synchronized).
+  bool owd_valid = 12;
+  // Sender TTL as seen by the reflector.
+  uint32 sender_ttl_at_reflector = 13;
+  // TTL of the reflected packet as received by the sender.
+  uint32 reflector_ttl_received = 14;
+  // DSCP of the reflected packet as received by the sender.
+  uint32 dscp_received = 15;
+  // Whether this packet duplicates one already accepted.
+  bool duplicate = 16;
+  // Which path duplicated the packet, when duplicate is set.
+  DuplicateKind duplicate_kind = 17;
+  // Whether the packet arrived out of order (RFC 4737).
+  bool reordered = 18;
+  // Error Estimate of the sender, as echoed by the reflector.
+  ErrorEstimate sender_errest = 19;
+  // Error Estimate of the reflector.
+  ErrorEstimate reflector_errest = 20;
+  // Whether t1 is a kernel TX timestamp.
+  bool t1_from_kernel = 21;
+  // ((T2 - T1) - (T4 - T3)) / 2: the clock offset plus half the path
+  // asymmetry. A hint only.
+  google.protobuf.Duration clock_offset_hint = 22;
+  // DSCP of the test packet as the reflector received it (RFC 7750).
+  optional uint32 dscp_reflected = 23;
+  // ECN of the test packet as the reflector received it (RFC 7750).
+  optional uint32 ecn_reflected = 24;
+}
+
+// PacketLost reports a packet not reflected within the timeout.
+message PacketLost {
+  // Sender Sequence Number.
+  uint32 seq = 1;
+  // Send time of the packet.
+  google.protobuf.Timestamp t1 = 2;
+}
+
+// DelayStats summarizes a delay metric over a run or window. Statistics that
+// are undefined for an empty sample are left unset.
+message DelayStats {
+  // Minimum.
+  google.protobuf.Duration min = 1;
+  // Arithmetic mean.
+  google.protobuf.Duration mean = 2;
+  // Median.
+  google.protobuf.Duration median = 3;
+  // Maximum.
+  google.protobuf.Duration max = 4;
+  // 95th percentile.
+  google.protobuf.Duration p95 = 5;
+  // 99th percentile.
+  google.protobuf.Duration p99 = 6;
+  // Sample standard deviation.
+  google.protobuf.Duration stddev = 7;
+  // Number of samples.
+  uint32 samples = 8;
+}
+
+// JitterStats summarizes delay variation over a run or window.
+message JitterStats {
+  // Mean of |rtt(i) - rtt(i-1)| (RFC 3393).
+  google.protobuf.Duration ipdv_rtt_mean = 1;
+  // Maximum of |rtt(i) - rtt(i-1)|.
+  google.protobuf.Duration ipdv_rtt_max = 2;
+  // 95th percentile of |rtt(i) - rtt(i-1)|.
+  google.protobuf.Duration ipdv_rtt_p95 = 3;
+  // Mean of |fwd_delay(i) - fwd_delay(i-1)|.
+  google.protobuf.Duration ipdv_fwd_mean = 4;
+  // Mean of |rev_delay(i) - rev_delay(i-1)|.
+  google.protobuf.Duration ipdv_rev_mean = 5;
+  // 95th percentile of rtt - min(rtt) (RFC 5481).
+  google.protobuf.Duration pdv_rtt_p95 = 6;
+  // 99th percentile of rtt - min(rtt).
+  google.protobuf.Duration pdv_rtt_p99 = 7;
+  // 99.9th percentile of rtt - min(rtt).
+  google.protobuf.Duration pdv_rtt_p999 = 8;
+  // Interarrival jitter of RFC 3550 §6.4.1 at the end of the run.
+  google.protobuf.Duration jitter_rfc3550 = 9;
+  // Sample standard deviation of rtt.
+  google.protobuf.Duration rtt_stddev = 10;
+  // p95(rtt) - p50(rtt), the "jitter" of perfSONAR twping.
+  google.protobuf.Duration jitter_p95_p50 = 11;
+  // Maximum of |fwd_delay(i) - fwd_delay(i-1)|.
+  google.protobuf.Duration ipdv_fwd_max = 12;
+  // 95th percentile of |fwd_delay(i) - fwd_delay(i-1)|.
+  google.protobuf.Duration ipdv_fwd_p95 = 13;
+  // Maximum of |rev_delay(i) - rev_delay(i-1)|.
+  google.protobuf.Duration ipdv_rev_max = 14;
+  // 95th percentile of |rev_delay(i) - rev_delay(i-1)|.
+  google.protobuf.Duration ipdv_rev_p95 = 15;
+}
+
+// HopStats summarizes the hop counts derived from TTLs.
+message HopStats {
+  // Minimum forward hop count.
+  uint32 fwd_min = 1;
+  // Maximum forward hop count.
+  uint32 fwd_max = 2;
+  // Minimum reverse hop count.
+  uint32 rev_min = 3;
+  // Maximum reverse hop count.
+  uint32 rev_max = 4;
+  // Most frequent forward hop count.
+  uint32 fwd = 5;
+  // Most frequent reverse hop count.
+  uint32 rev = 6;
+}
+
+// ClockInfo records the clock state both ends reported during a run.
+message ClockInfo {
+  // S bit of the sender's Error Estimate.
+  bool sender_synced = 1;
+  // S bit of the reflector's Error Estimate.
+  bool reflector_synced = 2;
+  // Sum of both Error Estimates: the error bound of one-way delays.
+  google.protobuf.Duration max_clock_error = 3;
+  // Timestamping method the sender used.
+  TimestampingMode timestamping_mode = 4;
+  // An Error Estimate had Multiplier 0: max_clock_error then sums only the
+  // known ends and is no bound.
+  bool max_clock_error_unknown = 5;
+  // Whether the sender used kernel transmit timestamps (T1').
+  bool tx_timestamps = 6;
+}
+
+// DscpReflected summarizes the DSCP and ECN the reflector received
+// (RFC 7750).
+message DscpReflected {
+  // Replies that carried the field.
+  uint64 count = 1;
+  // Most frequent DSCP.
+  uint32 mode = 2;
+  // Packets that reached the reflector with a DSCP other than the one sent.
+  uint64 remarked = 3;
+  // Packets that reached the reflector marked Congestion Experienced.
+  uint64 ce = 4;
+}
+
+// RunSummary aggregates one run or one window.
+message RunSummary {
+  // Monitoring session name. Empty for an ad-hoc test.
+  string session = 1;
+  // Run identifier (ULID).
+  string run_id = 2;
+  // Test specification with every default resolved.
+  TestSpec spec = 3;
+  // Actual local address and port.
+  Endpoint local = 4;
+  // Actual remote address and ports.
+  Endpoint remote = 5;
+  // TWAMP session identifier (Full only).
+  bytes sid = 6;
+  // Start of the run or window.
+  google.protobuf.Timestamp started_at = 7;
+  // End of the run or window.
+  google.protobuf.Timestamp ended_at = 8;
+  // Packets sent, excluding send errors.
+  uint32 sent = 9;
+  // Unique Sender Sequence Numbers received.
+  uint32 received = 10;
+  // Packets not received within the timeout.
+  uint32 lost = 11;
+  // lost / sent.
+  double loss_ratio = 12;
+  // Forward-path duplicates.
+  uint32 dup_forward = 13;
+  // Reverse-path duplicates.
+  uint32 dup_reverse = 14;
+  // Packets reordered by Sender Sequence Number (RFC 4737).
+  uint32 reordered = 15;
+  // Packets reordered by Reflector Sequence Number (stateful reflector only).
+  uint32 reordered_reverse = 16;
+  // Estimated forward-path losses (stateful reflector only).
+  int64 lost_forward_est = 17;
+  // Estimated reverse-path losses (stateful reflector only).
+  int64 lost_reverse_est = 18;
+  // Whether lost_forward_est and lost_reverse_est are meaningful.
+  bool loss_split_valid = 19;
+  // Round-trip time.
+  DelayStats rtt = 20;
+  // Forward one-way delay.
+  DelayStats fwd_delay = 21;
+  // Reverse one-way delay.
+  DelayStats rev_delay = 22;
+  // Reflector processing time.
+  DelayStats reflector_delay = 23;
+  // Whether the one-way delays are valid.
+  bool owd_valid = 24;
+  // Delay variation.
+  JitterStats jitter = 25;
+  // Hop counts.
+  HopStats hops = 26;
+  // Clock state of both ends.
+  ClockInfo clock = 27;
+  // The run was interrupted before completion.
+  bool aborted = 28;
+  // The results are unreliable (for example, the control connection was lost).
+  bool invalid = 29;
+  // Whether this summarizes a run or a window.
+  SummaryKind kind = 30;
+  // Replies with a negative forward or reverse delay (a sign of clock offset).
+  uint64 negative_owd = 31;
+  // Replies whose RTT was negative and was left out of the statistics.
+  uint64 invalid_rtt = 32;
+  // Replies whose kernel TX timestamp did not come in time (user-space T1
+  // used instead).
+  uint64 tx_timestamp_missing = 33;
+  // Replies whose kernel TX timestamp was more than 100us before the
+  // user-space T1 or after T4 (user-space T1 used instead).
+  uint64 tx_timestamp_invalid = 34;
+  // DSCP and ECN at the reflector; unset without RFC 7750 monitoring.
+  DscpReflected dscp_reflected = 35;
+  // Replies whose timestamp format could not be converted; their delays are
+  // not used.
+  uint64 unsupported_timestamp_format = 36;
+  // Replies that did not return the padding asked to be reflected
+  // (padding_to_reflect, RFC 6038 Reflect Octets).
+  uint64 reflected_mismatch = 37;
+}
+
+// RunStarted announces the start of a run.
+message RunStarted {
+  // Test specification with every default resolved.
+  TestSpec spec = 1;
+  // Actual local address and port.
+  Endpoint local = 2;
+  // Actual remote address and ports.
+  Endpoint remote = 3;
+  // TWAMP session identifier (Full only).
+  bytes sid = 4;
+  // Start of the run.
+  google.protobuf.Timestamp started_at = 5;
+}
+
+// RunError reports a failed run.
+message RunError {
+  // Stage in which the run failed.
+  RunStage stage = 1;
+  // Human readable description.
+  string message = 2;
+  // Accept value returned by the server, when the failure is a non-zero Accept.
+  uint32 accept = 3;
+}
+
+// EventsDropped tells a slow subscriber that events were discarded.
+message EventsDropped {
+  // Number of events discarded since the previous event delivered.
+  uint64 count = 1;
+}
+
+// TestEvent is one event of a run, streamed by RunTest and WatchResults.
+message TestEvent {
+  // The event.
+  oneof event {
+    // The run started.
+    RunStarted started = 1;
+    // A packet was reflected.
+    PacketResult packet = 2;
+    // A packet was lost.
+    PacketLost lost = 3;
+    // The run or window ended.
+    RunSummary summary = 4;
+    // The run failed.
+    RunError error = 5;
+    // Events were dropped for a slow subscriber (WatchResults only).
+    EventsDropped dropped = 6;
+  }
+  // Monitoring session the event belongs to. Empty for an ad-hoc test.
+  string session = 10;
+  // Run the event belongs to.
+  string run_id = 11;
+}

@@ -1,0 +1,42 @@
+# vJunos-router configuration for the gotwamp interoperability lab, in "set"
+# form. Load it after boot (vrnetlab's default login is admin / admin@123):
+#
+#   ssh admin@clab-gotwamp-interop-vjunos
+#   configure
+#   load set terminal      (paste this file, then Ctrl-D)
+#   commit and-quit
+#
+# ge-0/0/0 is containerlab's eth1, linked to gotwamp eth3. Junos OS managed
+# TWAMP supports IPv4 only; TWAMP Light also IPv6. Statement names follow the
+# Junos documentation (docs/research/vendor-juniper.md) and are not yet
+# confirmed on vJunos-router.
+
+set interfaces ge-0/0/0 unit 0 family inet address 10.10.3.2/24
+set interfaces ge-0/0/0 unit 0 family inet6 address fd00:10:3::2/64
+
+# I-10: gotwamp sender -> vJunos managed TWAMP server. Junos OS needs a
+# client-list before the server starts.
+set services rpm twamp server authentication-mode none
+set services rpm twamp server port 862
+set services rpm twamp server client-list gotwamp address 10.10.3.0/24
+# I-05: gotwamp Light sender -> vJunos TWAMP Light reflector (UDP 862).
+set services rpm twamp server light port 862
+
+# I-09: vJunos managed client -> gotwampd Full server. test-count 0 keeps the
+# control connection and repeats Request / Start / Stop on it.
+set services rpm twamp client control-connection gotwamp-full authentication-mode none
+set services rpm twamp client control-connection gotwamp-full target-address 10.10.3.1
+set services rpm twamp client control-connection gotwamp-full destination-port 862
+set services rpm twamp client control-connection gotwamp-full test-count 0
+set services rpm twamp client control-connection gotwamp-full test-interval 10
+set services rpm twamp client control-connection gotwamp-full test-session s1 target-address 10.10.3.1
+set services rpm twamp client control-connection gotwamp-full test-session s1 probe-count 100
+set services rpm twamp client control-connection gotwamp-full test-session s1 probe-interval 1
+set services rpm twamp client control-connection gotwamp-full test-session s1 data-size 60
+
+# I-06: vJunos TWAMP Light client -> gotwampd Light reflector (UDP 862).
+set services rpm twamp client control-connection gotwamp-light control-type light
+set services rpm twamp client control-connection gotwamp-light test-session l1 target-address 10.10.3.1
+set services rpm twamp client control-connection gotwamp-light test-session l1 destination-port 862
+set services rpm twamp client control-connection gotwamp-light test-session l1 probe-count 100
+set services rpm twamp client control-connection gotwamp-light test-session l1 probe-interval 1

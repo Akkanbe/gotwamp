@@ -1,0 +1,20 @@
+# Generates Go code into internal/api/gen/gotwamp/v1 (Go package gotwampv1).
+# Run `make proto`; the generated code is committed.
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/Akkanbe/gotwamp/internal/api/gen
+inputs:
+  - directory: api/proto
+plugins:
+  - local: protoc-gen-go
+    out: internal/api/gen
+    opt:
+      - paths=source_relative
+  - local: protoc-gen-go-grpc
+    out: internal/api/gen
+    opt:
+      - paths=source_relative
+clean: true

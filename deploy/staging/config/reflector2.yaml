@@ -1,0 +1,27 @@
+# gotwampd of staging reflector2 (docs/ops/staging.md).
+version: 1
+
+daemon:
+  api:
+    socket: /run/gotwamp/gotwampd.sock
+    socket_group: ""
+  metrics:
+    listen: "[::]:9862"
+  log:
+    level: info
+    format: text
+
+sender:
+  enabled: false
+
+reflector:
+  enabled: true
+  control:
+    listen: ["0.0.0.0:862", "[::]:862"]
+    keys_file: /run/gotwamp-keys/keys.pfs  # copied from keys/staging-test-only.pfs by the entrypoint
+    modes: [authenticated, encrypted, mixed]   # authentication required
+  light:
+    listeners:
+      - listen: "0.0.0.0:862"
+      - listen: "[::]:862"
+    # TWAMP Light is unauthenticated: open as on reflector1

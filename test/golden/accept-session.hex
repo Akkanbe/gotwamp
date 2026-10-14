@@ -1,0 +1,9 @@
+# Accept-Session, 48 octets (RFC 4656 §3.5, RFC 6038 §4.3)
+00                                                  # 0  Accept = 0 (OK)
+00                                                  # 1  MBZ
+4e 20                                               # 2  Port = 20000 (alternate port)
+c0 00 02 01 ee 6c 15 80 80 00 00 00 de ad be ef     # 4  SID = 192.0.2.1 | NTP timestamp | random
+00 04                                               # 20 Reflected octets = 4 (RFC 6038)
+ab cd                                               # 22 Server octets = 0xabcd (RFC 6038)
+00 00 00 00 00 00 00 00                             # 24 MBZ (8)
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00     # 32 HMAC (16)

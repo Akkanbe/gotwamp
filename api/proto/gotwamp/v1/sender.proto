@@ -1,0 +1,234 @@
+syntax = "proto3";
+
+package gotwamp.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "gotwamp/v1/types.proto";
+
+// SenderService runs ad-hoc tests and manages monitoring sessions.
+service SenderService {
+  // RunTest runs one ad-hoc test and streams its events. The count field of
+  // the spec is required (at most 100,000). Cancelling the RPC aborts the run
+  // and sends Stop-Sessions.
+  rpc RunTest(RunTestRequest) returns (stream TestEvent);
+  // StopTest ends an ad-hoc test early. Its RunTest stream delivers the
+  // aborted summary and closes, as when the test completes.
+  rpc StopTest(StopTestRequest) returns (StopTestResponse);
+  // ListSessions lists the monitoring sessions.
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+  // GetSession returns one monitoring session.
+  rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
+  // CreateSession adds a monitoring session (source: api).
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
+  // UpdateSession replaces the spec of a monitoring session and restarts it.
+  rpc UpdateSession(UpdateSessionRequest) returns (UpdateSessionResponse);
+  // DeleteSession removes a monitoring session.
+  rpc DeleteSession(DeleteSessionRequest) returns (DeleteSessionResponse);
+  // StartSession resumes a stopped monitoring session.
+  rpc StartSession(StartSessionRequest) returns (StartSessionResponse);
+  // StopSession pauses a monitoring session.
+  rpc StopSession(StopSessionRequest) returns (StopSessionResponse);
+  // GetSessionStats returns the most recent run or window summaries.
+  rpc GetSessionStats(GetSessionStatsRequest) returns (GetSessionStatsResponse);
+  // WatchResults streams the events of monitoring sessions as they happen.
+  rpc WatchResults(WatchResultsRequest) returns (stream TestEvent);
+}
+
+// ScheduleType selects how a monitoring session starts runs.
+enum ScheduleType {
+  // Inherit the default (periodic).
+  SCHEDULE_TYPE_UNSPECIFIED = 0;
+  // Start a run every frequency.
+  SCHEDULE_TYPE_PERIODIC = 1;
+  // Run back to back, summarizing every window.
+  SCHEDULE_TYPE_CONTINUOUS = 2;
+}
+
+// SessionState is the lifecycle state of a monitoring session.
+enum SessionState {
+  // Not known.
+  SESSION_STATE_UNSPECIFIED = 0;
+  // Created, not yet scheduled.
+  SESSION_STATE_CREATED = 1;
+  // Scheduled and running.
+  SESSION_STATE_RUNNING = 2;
+  // Paused by StopSession.
+  SESSION_STATE_STOPPED = 3;
+}
+
+// SessionSource tells where a monitoring session was defined.
+enum SessionSource {
+  // Not known.
+  SESSION_SOURCE_UNSPECIFIED = 0;
+  // Defined in the configuration file; subject to reloads.
+  SESSION_SOURCE_CONFIG = 1;
+  // Created through the API; kept until the daemon restarts.
+  SESSION_SOURCE_API = 2;
+}
+
+// Schedule describes when a monitoring session runs.
+message Schedule {
+  // Periodic or continuous.
+  ScheduleType type = 1;
+  // Interval between run starts (periodic).
+  google.protobuf.Duration frequency = 2;
+  // Upper bound of the random delay before the first run (periodic).
+  google.protobuf.Duration jitter = 3;
+  // Width of each statistics window (continuous).
+  google.protobuf.Duration window = 4;
+}
+
+// SessionSpec defines a monitoring session. It has the same schema as an
+// element of sender.sessions in the configuration file.
+message SessionSpec {
+  // Unique name matching [a-z0-9][a-z0-9_-]{0,62}.
+  string name = 1;
+  // Test parameters. Unset fields inherit sender.defaults.
+  TestSpec spec = 2;
+  // When the session runs.
+  Schedule schedule = 3;
+  // Extra Prometheus labels, at most 8. session, target and mode are reserved.
+  map<string, string> labels = 4;
+}
+
+// Session is the current view of a monitoring session.
+message Session {
+  // The definition, as given.
+  SessionSpec spec = 1;
+  // Lifecycle state.
+  SessionState state = 2;
+  // Where the session was defined.
+  SessionSource source = 3;
+  // Summary of the most recent run or window, if any.
+  RunSummary last_summary = 4;
+  // Error of the most recent run, if it failed.
+  RunError last_error = 5;
+  // Whether a run is in progress.
+  bool running = 6;
+  // Completed runs and windows.
+  uint64 runs_ok = 7;
+  // Failed runs.
+  uint64 runs_failed = 8;
+  // Periodic runs skipped because the previous one was still running.
+  uint64 runs_skipped = 9;
+  // When the last run or window completed or failed.
+  google.protobuf.Timestamp last_run_at = 10;
+}
+
+// RunTestRequest is the request of RunTest.
+message RunTestRequest {
+  // Test parameters. Unset fields inherit sender.defaults.
+  TestSpec spec = 1;
+}
+
+// StopTestRequest is the request of StopTest.
+message StopTestRequest {
+  // Run to stop, as announced by the RunTest stream.
+  string run_id = 1;
+}
+
+// StopTestResponse is the response of StopTest.
+message StopTestResponse {}
+
+// ListSessionsRequest is the request of ListSessions.
+message ListSessionsRequest {}
+
+// ListSessionsResponse is the response of ListSessions.
+message ListSessionsResponse {
+  // All monitoring sessions, ordered by name.
+  repeated Session sessions = 1;
+}
+
+// GetSessionRequest is the request of GetSession.
+message GetSessionRequest {
+  // Session name.
+  string name = 1;
+}
+
+// GetSessionResponse is the response of GetSession.
+message GetSessionResponse {
+  // The session.
+  Session session = 1;
+}
+
+// CreateSessionRequest is the request of CreateSession.
+message CreateSessionRequest {
+  // Definition of the new session.
+  SessionSpec spec = 1;
+}
+
+// CreateSessionResponse is the response of CreateSession.
+message CreateSessionResponse {
+  // The created session.
+  Session session = 1;
+}
+
+// UpdateSessionRequest is the request of UpdateSession.
+message UpdateSessionRequest {
+  // New definition. The session is identified by spec.name.
+  SessionSpec spec = 1;
+}
+
+// UpdateSessionResponse is the response of UpdateSession.
+message UpdateSessionResponse {
+  // The updated session.
+  Session session = 1;
+}
+
+// DeleteSessionRequest is the request of DeleteSession.
+message DeleteSessionRequest {
+  // Session name.
+  string name = 1;
+}
+
+// DeleteSessionResponse is the response of DeleteSession.
+message DeleteSessionResponse {}
+
+// StartSessionRequest is the request of StartSession.
+message StartSessionRequest {
+  // Session name.
+  string name = 1;
+}
+
+// StartSessionResponse is the response of StartSession.
+message StartSessionResponse {
+  // The session after the change.
+  Session session = 1;
+}
+
+// StopSessionRequest is the request of StopSession.
+message StopSessionRequest {
+  // Session name.
+  string name = 1;
+}
+
+// StopSessionResponse is the response of StopSession.
+message StopSessionResponse {
+  // The session after the change.
+  Session session = 1;
+}
+
+// GetSessionStatsRequest is the request of GetSessionStats.
+message GetSessionStatsRequest {
+  // Session name.
+  string name = 1;
+  // Maximum number of summaries to return. Zero returns all that are kept.
+  uint32 last = 2;
+  // Return only summaries that ended at or after this time.
+  google.protobuf.Timestamp since = 3;
+}
+
+// GetSessionStatsResponse is the response of GetSessionStats.
+message GetSessionStatsResponse {
+  // Summaries, oldest first.
+  repeated RunSummary summaries = 1;
+}
+
+// WatchResultsRequest is the request of WatchResults.
+message WatchResultsRequest {
+  // Sessions to watch. Empty watches all sessions.
+  repeated string sessions = 1;
+  // Also stream per-packet events (PacketResult and PacketLost).
+  bool packets = 2;
+}

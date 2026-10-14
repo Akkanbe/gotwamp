@@ -1,0 +1,97 @@
+syntax = "proto3";
+
+package gotwamp.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "gotwamp/v1/types.proto";
+
+// DaemonService reports and controls the gotwampd process itself.
+service DaemonService {
+  // GetStatus returns the version, uptime, roles, clock and timestamping state.
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+  // ReloadConfig re-reads the configuration file and applies the difference,
+  // like SIGHUP.
+  rpc ReloadConfig(ReloadConfigRequest) returns (ReloadConfigResponse);
+}
+
+// ClockSyncSource tells how the synchronization state was determined.
+enum ClockSyncSource {
+  // Not known.
+  CLOCK_SYNC_SOURCE_UNSPECIFIED = 0;
+  // Read from the kernel with adjtimex (clock.sync: auto).
+  CLOCK_SYNC_SOURCE_KERNEL = 1;
+  // Forced by the configuration (clock.sync: synced or unsynced).
+  CLOCK_SYNC_SOURCE_CONFIG = 2;
+}
+
+// ClockStatus is the state of the local clock.
+message ClockStatus {
+  // Whether the clock is synchronized.
+  bool synchronized = 1;
+  // Maximum clock error.
+  google.protobuf.Duration max_error = 2;
+  // How synchronized was determined.
+  ClockSyncSource source = 3;
+}
+
+// GetStatusRequest is the request of GetStatus.
+message GetStatusRequest {}
+
+// GetStatusResponse is the response of GetStatus.
+message GetStatusResponse {
+  // Release version of gotwampd.
+  string version = 1;
+  // VCS revision gotwampd was built from.
+  string commit = 2;
+  // Go version gotwampd was built with.
+  string go_version = 3;
+  // Process start time.
+  google.protobuf.Timestamp started_at = 4;
+  // Time since started_at.
+  google.protobuf.Duration uptime = 5;
+  // Whether the sender role is enabled.
+  bool sender_enabled = 6;
+  // Whether the reflector role is enabled.
+  bool reflector_enabled = 7;
+  // Timestamping method in use.
+  TimestampingMode timestamping_mode = 8;
+  // State of the local clock.
+  ClockStatus clock = 9;
+  // Number of monitoring sessions.
+  uint32 session_count = 10;
+  // Path of the configuration file in use. Empty when running on defaults.
+  string config_path = 11;
+  // The result store.
+  StoreStatus store = 12;
+}
+
+// StoreStatus describes the result store (store.backend).
+message StoreStatus {
+  // "memory" or "sqlite".
+  string backend = 1;
+  // The database file of sqlite; empty for memory.
+  string path = 2;
+  // Results committed to the database, dropped because its writer was
+  // behind, and refused by it (sqlite only).
+  uint64 results_written = 3;
+  uint64 results_dropped = 4;
+  uint64 results_failed = 5;
+}
+
+// ReloadConfigRequest is the request of ReloadConfig.
+message ReloadConfigRequest {}
+
+// ReloadConfigResponse summarizes what a reload changed.
+message ReloadConfigResponse {
+  // Sessions added.
+  repeated string sessions_added = 1;
+  // Sessions removed.
+  repeated string sessions_removed = 2;
+  // Sessions whose spec changed and were recreated.
+  repeated string sessions_updated = 3;
+  // Number of sessions left untouched.
+  uint32 sessions_unchanged = 4;
+  // Warnings, such as reflector listener changes that require rebinding.
+  repeated string warnings = 5;
+}

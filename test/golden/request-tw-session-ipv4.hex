@@ -1,0 +1,20 @@
+# Request-TW-Session, 112 octets (RFC 5357 §3.5, layout of RFC 4656 §3.5)
+05                                                  # 0  Command Number = 5
+04                                                  # 1  MBZ (4 bits) | IPVN = 4
+00                                                  # 2  Conf-Sender = 0
+00                                                  # 3  Conf-Receiver = 0
+00 00 00 00                                         # 4  Number of Schedule Slots = 0
+00 00 00 00                                         # 8  Number of Packets = 0
+c0 00                                               # 12 Sender Port = 49152
+c0 00                                               # 14 Receiver Port = 49152
+c0 00 02 01 00 00 00 00 00 00 00 00 00 00 00 00     # 16 Sender Address = 192.0.2.1, 12 octets zero
+c6 33 64 02 00 00 00 00 00 00 00 00 00 00 00 00     # 32 Receiver Address = 198.51.100.2, 12 octets zero
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00     # 48 SID = 0
+00 00 00 1b                                         # 64 Padding Length = 27
+00 00 00 00 00 00 00 00                             # 68 Start Time = 0 (immediately)
+00 00 00 02 00 00 00 00                             # 76 Timeout = 2 s
+2e 00 00 00                                         # 84 Type-P Descriptor = DSCP 46 (EF)
+00 00                                               # 88 Octets to be reflected = 0 (RFC 6038)
+00 00                                               # 90 Length of padding to reflect = 0 (RFC 6038)
+00 00 00 00                                         # 92 MBZ (4)
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00     # 96 HMAC (16), zero in unauthenticated mode

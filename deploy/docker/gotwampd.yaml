@@ -1,0 +1,26 @@
+# gotwampd configuration of the container image. Mount your own over
+# /etc/gotwamp/gotwampd.yaml to change it.
+version: 1
+
+daemon:
+  api:
+    socket: /run/gotwamp/gotwampd.sock
+    socket_mode: "0660"
+    socket_group: ""                # the image has no gotwamp group: keep nonroot's
+  metrics:
+    listen: "0.0.0.0:9862"          # published by the container
+  log:
+    level: info
+    format: json
+
+sender:
+  enabled: true
+
+reflector:
+  enabled: true
+  control:
+    listen: ["0.0.0.0:862", "[::]:862"]
+  light:
+    listeners:
+      - listen: "0.0.0.0:862"
+      - listen: "[::]:862"

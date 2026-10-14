@@ -1,0 +1,141 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Nightly, so that newly published vulnerabilities show up without a push.
+    - cron: "17 18 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Build
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+        run: make build
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Test (race)
+        run: make cover
+
+  component:
+    # netns + veth + tc netem (test/component, build tag integration). The
+    # runners have passwordless sudo; netem may need the extra modules.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Prepare netem, tcpdump and tshark
+        run: |
+          sudo modprobe sch_netem || {
+            sudo apt-get update
+            sudo apt-get install -y "linux-modules-extra-$(uname -r)"
+            sudo modprobe sch_netem
+          }
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y tcpdump tshark
+      - name: Component tests
+        run: make test-component
+
+  soak:
+    # The short soak: 20 sessions × 10 pps for 60 s, checked for leaks. The
+    # 24-hour run of PLAN M5 is manual (make soak SOAK_SESSIONS=100 SOAK_DURATION=24h).
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Soak (short)
+        run: make soak
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Install tools
+        run: make tools
+      - name: gofumpt
+        run: make lint-fmt
+      - name: go vet
+        run: make lint-vet
+      - name: golangci-lint
+        run: make lint-golangci
+      # shrink first: the exports it removes become boundary reports.
+      - name: declscope shrink
+        run: declscope shrink ./...
+      - name: declscope
+        run: declscope ./...
+
+  proto:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Install tools
+        run: make tools
+      - name: buf lint
+        run: make lint-proto
+      - name: Generated code is up to date
+        run: |
+          make proto
+          git add -N internal/api/gen
+          git diff --exit-code -- internal/api/gen
+      - name: buf breaking
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if git cat-file -e "${BASE_SHA}:api/proto" 2>/dev/null; then
+            buf breaking --against ".git#ref=${BASE_SHA}"
+          else
+            echo "api/proto does not exist on the base; nothing to compare."
+          fi
+
+  vulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
+      - name: govulncheck
+        run: make vuln

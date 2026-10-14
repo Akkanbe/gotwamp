@@ -1,0 +1,175 @@
+syntax = "proto3";
+
+package gotwamp.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "gotwamp/v1/types.proto";
+
+// ReflectorService reports the state of the reflector role.
+service ReflectorService {
+  // GetReflectorStatus returns the listeners, connection and flow counts and
+  // the packet counters.
+  rpc GetReflectorStatus(GetReflectorStatusRequest) returns (GetReflectorStatusResponse);
+  // ListReflectorSessions lists the Full test sessions and the Light flows.
+  rpc ListReflectorSessions(ListReflectorSessionsRequest) returns (ListReflectorSessionsResponse);
+}
+
+// ReflectorKind distinguishes the Full and Light parts of the reflector.
+enum ReflectorKind {
+  // Both, or not known.
+  REFLECTOR_KIND_UNSPECIFIED = 0;
+  // TWAMP-Control server and its Session-Reflectors.
+  REFLECTOR_KIND_FULL = 1;
+  // TWAMP Light reflector.
+  REFLECTOR_KIND_LIGHT = 2;
+}
+
+// DropReason is why the reflector discarded a test packet.
+enum DropReason {
+  // Not known.
+  DROP_REASON_UNSPECIFIED = 0;
+  // Source not allowed by the ACL.
+  DROP_REASON_ACL = 1;
+  // Too short, too long or otherwise malformed.
+  DROP_REASON_MALFORMED = 2;
+  // No Full session matches the packet.
+  DROP_REASON_UNKNOWN_SESSION = 3;
+  // Per-source rate limit exceeded.
+  DROP_REASON_RATE_LIMIT = 4;
+  // Arrived before Start-Sessions.
+  DROP_REASON_NOT_STARTED = 5;
+  // Arrived after Stop-Sessions plus Timeout.
+  DROP_REASON_DRAINED = 6;
+}
+
+// FullSessionState is the state of a Full test session on the reflector.
+enum FullSessionState {
+  // Not known.
+  FULL_SESSION_STATE_UNSPECIFIED = 0;
+  // SID issued and socket bound; waiting for Start-Sessions.
+  FULL_SESSION_STATE_ACCEPTED = 1;
+  // Reflecting.
+  FULL_SESSION_STATE_ACTIVE = 2;
+  // Stop-Sessions received; reflecting until Timeout expires.
+  FULL_SESSION_STATE_DRAINING = 3;
+}
+
+// ReflectorListener is a socket the reflector listens on.
+message ReflectorListener {
+  // Full (TWAMP-Control TCP) or Light (UDP).
+  ReflectorKind kind = 1;
+  // Listen address and port, such as "[::]:862".
+  string address = 2;
+  // Test packets received on this listener (Light only).
+  uint64 packets_received = 3;
+  // Test packets reflected from this listener (Light only).
+  uint64 packets_reflected = 4;
+}
+
+// ReflectorCounters are the packet counters of one kind of reflector.
+message ReflectorCounters {
+  // Full or Light.
+  ReflectorKind kind = 1;
+  // Test packets received.
+  uint64 packets_received = 2;
+  // Test packets reflected.
+  uint64 packets_reflected = 3;
+  // Test packets dropped, by reason.
+  repeated DropCount dropped = 4;
+}
+
+// DropCount is the number of packets dropped for one reason.
+message DropCount {
+  // Why the packets were dropped.
+  DropReason reason = 1;
+  // Number of packets.
+  uint64 count = 2;
+}
+
+// GetReflectorStatusRequest is the request of GetReflectorStatus.
+message GetReflectorStatusRequest {}
+
+// GetReflectorStatusResponse is the response of GetReflectorStatus.
+message GetReflectorStatusResponse {
+  // Whether the reflector role is enabled.
+  bool enabled = 1;
+  // Control and Light listeners.
+  repeated ReflectorListener listeners = 2;
+  // Open TWAMP-Control connections.
+  uint32 control_connections_active = 3;
+  // TWAMP-Control connections accepted since start.
+  uint64 control_connections_accepted = 4;
+  // TWAMP-Control connections refused (ACL or limits) since start.
+  uint64 control_connections_rejected = 5;
+  // Full test sessions not yet released.
+  uint32 full_sessions_active = 6;
+  // Light flows with per-flow state.
+  uint32 light_flows_active = 7;
+  // New Light flows handled statelessly because max_flows was reached.
+  uint64 light_flows_overflow = 8;
+  // Packet counters, one entry per kind.
+  repeated ReflectorCounters counters = 9;
+}
+
+// ListReflectorSessionsRequest is the request of ListReflectorSessions.
+message ListReflectorSessionsRequest {
+  // Restrict the listing to one kind. Unspecified lists both.
+  ReflectorKind kind = 1;
+}
+
+// FullReflectorSession is a test session negotiated through TWAMP-Control.
+message FullReflectorSession {
+  // TWAMP session identifier.
+  bytes sid = 1;
+  // Control-Client side of the control connection.
+  Endpoint control_peer = 2;
+  // Session-Sender address and port.
+  Endpoint sender = 3;
+  // Local Session-Reflector address and port.
+  Endpoint reflector = 4;
+  // Session state.
+  FullSessionState state = 5;
+  // Requested Packet Padding length.
+  uint32 padding = 6;
+  // DSCP from the requested Type-P.
+  uint32 dscp = 7;
+  // Requested Timeout.
+  google.protobuf.Duration timeout = 8;
+  // When Accept-Session was sent.
+  google.protobuf.Timestamp accepted_at = 9;
+  // Test packets received.
+  uint64 packets_received = 10;
+  // Test packets reflected.
+  uint64 packets_reflected = 11;
+  // Arrival time of the last test packet.
+  google.protobuf.Timestamp last_received_at = 12;
+  // The security mode of the control connection that requested it.
+  SecurityMode security = 13;
+}
+
+// LightFlow is a flow the Light reflector keeps per-flow state for.
+message LightFlow {
+  // Sender address and port.
+  Endpoint source = 1;
+  // Local listener address and port.
+  Endpoint destination = 2;
+  // Next Reflector Sequence Number of the flow.
+  uint32 next_seq = 3;
+  // Test packets received.
+  uint64 packets_received = 4;
+  // Test packets reflected.
+  uint64 packets_reflected = 5;
+  // Arrival time of the first test packet.
+  google.protobuf.Timestamp first_received_at = 6;
+  // Arrival time of the last test packet.
+  google.protobuf.Timestamp last_received_at = 7;
+}
+
+// ListReflectorSessionsResponse is the response of ListReflectorSessions.
+message ListReflectorSessionsResponse {
+  // Full test sessions.
+  repeated FullReflectorSession full_sessions = 1;
+  // Light flows.
+  repeated LightFlow light_flows = 2;
+}

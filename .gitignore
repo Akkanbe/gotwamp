@@ -1,0 +1,80 @@
+# ---- Go ----
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+# Test binaries built with `go test -c`
+*.test
+# Output of the go coverage tool and the profilers
+*.out
+coverage.html
+*.prof
+*.pprof
+# Dependency directory (modules are not vendored)
+vendor/
+# Go workspace files
+go.work
+go.work.sum
+
+# ---- Build and release artifacts ----
+# make build
+/bin/
+# make release-snapshot (goreleaser)
+/dist/
+/build/
+# `go build ./cmd/...` run from the repository root drops binaries here
+/gotwampd
+/gotwamp
+
+# ---- Results written by gotwampd and the tests ----
+# JSON Lines output (export.jsonl), except the fixtures under test/
+*.jsonl
+!/test/**/*.jsonl
+# SQLite result store (store.sqlite) and its journal files
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+# Soak samples (make soak SOAK_ARGS=-soak.csv=...)
+soak*.csv
+# Packet captures, except the fixtures under test/
+*.pcap
+*.pcapng
+!/test/**/*.pcap
+!/test/**/*.pcapng
+
+# ---- Lab and staging environments ----
+# containerlab working directories (deploy/containerlab)
+clab-*/
+.clab/
+# deploy/staging: the sender's API socket directory, bind-mounted from the
+# container (also listed in deploy/staging/.gitignore)
+/deploy/staging/run/
+
+# ---- Secrets ----
+# Private keys and shared secrets. The two keys files below are TEST ONLY:
+# dummy passphrases of the tests and the staging environment, published on
+# purpose and never to be used in production.
+*.key
+*-key.pem
+*.p12
+*.pfx
+*.pfs
+!/test/interop/perfsonar/conf/twamp-server-test-only.pfs
+!/deploy/staging/keys/staging-test-only.pfs
+.env
+
+# ---- Editors and OS ----
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ---- Local tooling ----
+.claude/settings.local.json
+# Reports of agent reviews (local only)
+.claude/reports/

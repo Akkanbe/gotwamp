@@ -1,0 +1,41 @@
+# SR Linux startup configuration for the gotwamp interoperability lab.
+# containerlab applies these "set" commands at boot (startup-config *.cli).
+#
+# The paths under /oam follow the SR Linux YANG models (srl_nokia-twamp,
+# srl_nokia-stamp, srl_nokia-oam-pm-ip; docs/research/vendor-others.md) and
+# are not yet confirmed: the 26.7.2 container of type ixr-d3l / ixr-d2l has
+# no /oam tree at all, and the types that should have it did not boot
+# outside containerlab. Check them with "info from state system features"
+# and tab completion on the first deploy, and fix this file.
+
+set / interface ethernet-1/1 admin-state enable
+set / interface ethernet-1/1 subinterface 0 admin-state enable
+set / interface ethernet-1/1 subinterface 0 ipv4 admin-state enable
+set / interface ethernet-1/1 subinterface 0 ipv4 address 10.10.2.2/24
+set / interface ethernet-1/1 subinterface 0 ipv6 admin-state enable
+set / interface ethernet-1/1 subinterface 0 ipv6 address fd00:10:2::2/64
+set / network-instance default interface ethernet-1/1.0
+
+# I-10 style: gotwamp sender -> SR Linux Full TWAMP server (default
+# network-instance only; Receiver Port must be 862 or 49152-65535).
+# Start Time enforcement is on by default: gotwamp sends Start Time 0.
+set / oam twamp server network-instance default admin-state enable
+set / oam twamp server network-instance default servwait 900
+set / oam twamp server network-instance default client-connection 10.10.2.0/24 maximum-connections 32 maximum-sessions 32
+set / oam twamp server network-instance default client-connection fd00:10:2::/64 maximum-connections 32 maximum-sessions 32
+
+# I-05: gotwamp Light sender -> SR Linux STAMP session-reflector (UDP 862).
+set / oam stamp session-reflector network-instance default admin-state enable
+set / oam stamp session-reflector network-instance default udp-port 862
+set / oam stamp session-reflector network-instance default prefix 10.10.2.0/24
+set / oam stamp session-reflector network-instance default prefix fd00:10:2::/64
+
+# I-06 / I-12: SR Linux STAMP session-sender (OAM-PM IP, 24.7+) -> gotwampd
+# Light reflector (UDP 862). Source ports come from 64374-64383.
+set / oam oam-pm ip-sessions session gotwamp-light admin-state enable
+set / oam oam-pm ip-sessions session gotwamp-light network-instance default
+set / oam oam-pm ip-sessions session gotwamp-light source-ip-address 10.10.2.2
+set / oam oam-pm ip-sessions session gotwamp-light destination-ip-address 10.10.2.1
+set / oam oam-pm ip-sessions session gotwamp-light destination-udp-port 862
+set / oam oam-pm ip-sessions session gotwamp-light stamp admin-state enable
+set / oam oam-pm ip-sessions session gotwamp-light stamp interval 1000

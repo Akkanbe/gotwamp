@@ -1,0 +1,7 @@
+# Stop-Sessions, 32 octets (RFC 5357 §3.8)
+03                                                  # 0  Command Number = 3
+00                                                  # 1  Accept = 0 (normal completion)
+00 00                                               # 2  MBZ (2)
+00 00 00 01                                         # 4  Number of Sessions = 1
+00 00 00 00 00 00 00 00                             # 8  MBZ (8)
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00     # 16 HMAC (16)

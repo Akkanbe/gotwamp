@@ -1,0 +1,6 @@
+# Server-Start, 48 octets (RFC 4656 §3.1)
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00        # 0  MBZ (15)
+00                                                  # 15 Accept = 0 (OK)
+a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 aa ab ac ad ae af     # 16 Server-IV (16)
+ee 6c 15 80 80 00 00 00                             # 32 Start-Time = 2026-10-04T00:00:00.5Z
+00 00 00 00 00 00 00 00                             # 40 MBZ (8)

@@ -1,0 +1,7 @@
+# TEST ONLY: dummy passphrases, never use in production.
+#
+# Shared secrets of the authenticated interop tests (twamp-server.pfs format:
+# identity, then the passphrase in hex). Both twampd/twping and gotwamp read
+# this file; the containers mount it as twamp-server.pfs, the name twampd
+# looks for. The passphrase is "gotwamp-interop", published on purpose.
+gotwamp 676f7477616d702d696e7465726f70
