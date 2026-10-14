@@ -39,6 +39,9 @@ go.work.sum
 *.db-journal
 # Soak samples (make soak SOAK_ARGS=-soak.csv=...)
 soak*.csv
+# Logs of the CI test steps (.github/workflows/ci.yml)
+/go-test.log
+/race-probe.log
 # Packet captures, except the fixtures under test/
 *.pcap
 *.pcapng

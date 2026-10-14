@@ -95,9 +95,13 @@ Found by the reviews from the maintenance and operations point of view (A: stati
 - Light reflector: a wildcard listener replied from the address the route chose rather than from the destination it was reached at (senders on multihomed hosts discarded the replies).
 - Full reflector: sessions whose padding did not fit max_packet_size were accepted and lost every packet (now refused with Accept 3).
 
+### Security
+
+- Go 1.26.9 (`go` directive) and golang.org/x/net v0.61.0: fixes GO-2026-6607 (crypto/tls), GO-2026-6608 (net/textproto), GO-2026-6611 / 6612 / 6613 / 6617 (net/http and the HTTP/2 framer that gRPC uses). govulncheck reports nothing.
+
 ### TODO
 
 - OTLP export (ADR 0010; to be added as an exporter implementing `store.ResultSink`)
-- Update `google.golang.org/grpc` to v1.85.0 or later (GO-2026-6443; v1.84.0 has unreleased fixes only, and the current code does not call the affected path)
+- Update `google.golang.org/grpc` to v1.85.0 once released (GO-2026-6443 was fixed in its development branch; govulncheck v1.8.0 no longer reports it against v1.84.0, and the current code does not call the affected path)
 - Report the NIC timestamps discarded in hardware timestamping (`HardwareRejected`, a sign of an unsynchronized PHC) in metrics or logs (ADR 0014)
 - Check interoperability of STAMP / RFC 6038 / RFC 5938 with real devices (SR Linux and others); perfSONAR does not support them

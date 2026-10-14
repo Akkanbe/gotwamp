@@ -64,7 +64,11 @@ func TestValidateSessionAndTest(t *testing.T) {
 	if err == nil || err.Error() != "invalid configuration (2 problems):\n  session.name: \"Bad\" does not match ^[a-z0-9][a-z0-9_-]{0,62}$\n  session.target: is required" {
 		t.Errorf("ValidateSession = %v", err)
 	}
-	s.Name, s.Target = "ok", "192.0.2.1"
+	s.Name = "ok"
+	if err := ValidateSession(&s); err == nil || err.Error() != "invalid configuration (1 problem):\n  session.target: is required" {
+		t.Errorf("ValidateSession(one problem) = %v", err)
+	}
+	s.Target = "192.0.2.1"
 	if err := ValidateSession(&s); err != nil {
 		t.Errorf("ValidateSession(valid) = %v", err)
 	}

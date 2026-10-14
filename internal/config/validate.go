@@ -44,7 +44,11 @@ func (e *Error) Error() string {
 	for i, p := range e.Problems {
 		lines[i] = "  " + p.String()
 	}
-	return fmt.Sprintf("invalid configuration (%d problems):\n%s", len(e.Problems), strings.Join(lines, "\n"))
+	noun := "problems"
+	if len(e.Problems) == 1 {
+		noun = "problem"
+	}
+	return fmt.Sprintf("invalid configuration (%d %s):\n%s", len(e.Problems), noun, strings.Join(lines, "\n"))
 }
 
 // Validation limits (SPEC §9.2).
