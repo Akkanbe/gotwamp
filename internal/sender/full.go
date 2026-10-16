@@ -206,9 +206,11 @@ func normalizeFull(cfg Config, fc FullConfig) (Config, error) {
 //
 // Errors of the control protocol, including a failed connect, are
 // *client.Error, whose Stage and Accept tell what failed (SPEC §10.4 exit
-// code 4). A canceled ctx returns its error with the aborted summary. When
+// code 4). Cancellation returns its cause; only open measurement windows
+// are aborted. Completed measurements survive cancellation during teardown. When
 // the control connection is lost during the run, the summary comes with an
-// error matching client.ErrControlLost.
+// error matching client.ErrControlLost. Bounded and aborted-window summary
+// hooks run after teardown; completed continuous windows stream immediately.
 func RunFull(ctx context.Context, cfg Config, fc FullConfig, opts ...Option) (Summary, error) {
 	fc = fc.WithDefaults()
 	var err error
@@ -258,22 +260,32 @@ func RunFull(ctx context.Context, cfg Config, fc FullConfig, opts ...Option) (Su
 	}
 	cfg.Target = sess.Reflector
 	cfg.Source = netip.AddrPort{}
-	// Results collected when the control connection was lost are kept but
-	// marked invalid (SPEC §5.6), in the summaries the hooks get too, which
-	// also carry the SID.
+	// Completed continuous windows stream immediately. Bounded and aborted
+	// summaries wait for teardown so their flags agree with the terminal outcome.
 	var o options
 	for _, f := range opts {
 		f(&o)
 	}
-	if h := o.hooks; h.Summary != nil {
-		report := h.Summary
-		h.Summary = func(s Summary) {
-			s.SID = sess.SID
-			s.Invalid = s.Invalid || c.Err() != nil
-			report(s)
+	var held []Summary
+	var completed Summary
+	var haveCompleted bool
+	h := o.hooks
+	report := h.Summary
+	h.Summary = func(s Summary) {
+		s.SID = sess.SID
+		s.Invalid = s.Invalid || c.Err() != nil
+		if cfg.Count > 0 || s.Aborted {
+			if report != nil {
+				held = append(held, s)
+			}
+		} else {
+			completed, haveCompleted = s, true
+			if report != nil {
+				report(s)
+			}
 		}
-		opts = append(opts, WithHooks(h))
 	}
+	opts = append(opts, WithHooks(h))
 	snd, err := New(cfg, append(opts, WithConn(conn), withFull(), withSecurity(sess.Security, sess.TestKeys), withLayout(sess.Layout, sess.ServerOctets))...)
 	if err != nil {
 		return Summary{}, err
@@ -296,25 +308,44 @@ func RunFull(ctx context.Context, cfg Config, fc FullConfig, opts ...Option) (Su
 	}()
 	sum, runErr := snd.Run(runCtx)
 	sum.SID = sess.SID
-	if lost := c.Err(); lost != nil {
-		// No Stop-Sessions is possible; the results may be invalid (SPEC §5.6).
-		sum.Invalid = true
-		return sum, lost
-	}
-	if runErr == nil && fc.EndDelay > 0 {
+	failed := runErr != nil && (ctx.Err() == nil || !errors.Is(runErr, context.Cause(ctx)))
+	if runErr == nil && fc.EndDelay > 0 && c.Err() == nil {
 		select {
 		case <-time.After(fc.EndDelay):
 		case <-ctx.Done():
+		case <-c.Lost():
 		}
 	}
-	accept := wire.AcceptOK
-	if runErr != nil && ctx.Err() == nil {
-		accept = wire.AcceptFailure // a socket failure: the results are invalid
+	var stopErr error
+	if c.Err() == nil {
+		accept := wire.AcceptOK
+		if failed {
+			accept = wire.AcceptFailure
+		}
+		stopCtx, stopCancel := context.WithTimeout(context.WithoutCancel(ctx), stopTimeout)
+		stopErr = stop(stopCtx, c, sess, accept)
+		stopCancel()
 	}
-	stopCtx, stopCancel := context.WithTimeout(context.WithoutCancel(ctx), stopTimeout)
-	defer stopCancel()
-	if err := stop(stopCtx, c, sess, accept); err != nil && runErr == nil {
-		return sum, err
+	// Control loss retains precedence; otherwise keep a measurement failure,
+	// then caller cancellation, then a failure of best-effort teardown.
+	if lost := c.Err(); lost != nil {
+		runErr, failed = lost, true
+	} else if runErr == nil {
+		runErr = context.Cause(ctx)
+		if runErr == nil {
+			runErr = stopErr
+		}
+	}
+	invalid := failed || stopErr != nil
+	if cfg.Count == 0 && !sum.Aborted && haveCompleted {
+		// Failure between windows does not change a completed window's result.
+		sum = completed
+	} else {
+		sum.Invalid = sum.Invalid || invalid
+	}
+	for _, s := range held {
+		s.Invalid = s.Invalid || invalid
+		report(s)
 	}
 	return sum, runErr
 }

@@ -32,7 +32,9 @@ summary, err := sender.RunLight(ctx, cfg, sender.WithHooks(sender.Hooks{
 cancellation. This zero value does not select the default packet count.
 `Config.WithDefaults` fills timing defaults without network activity;
 `Config.Validate` applies the same defaults while checking a copy. Zero padding
-means zero padding, not the normal 27-byte padding.
+means zero padding, not the normal 27-byte padding. Source and target IPv4-mapped
+addresses are unmapped consistently before family checks and socket acquisition;
+validation checks a copy and does not modify the caller's configuration.
 
 For explicit acquisition, use `sender.New`, inspect `LocalAddr`, call `Run` once
 and then `Close`. `RunLight` owns acquisition and cleanup for a complete run.
@@ -86,7 +88,16 @@ seconds, then releases its resources. A control failure is a
 `*gotwamp.ControlError`, usable with `errors.As`; inspect its `Stage` and `Accept`,
 and use `errors.Is` with sentinels such as `gotwamp.ErrRejected`,
 `gotwamp.ErrTimeout` or `gotwamp.ErrControlLost`. Results from a lost control
-connection are marked `Invalid`.
+connection are marked `Invalid`, as are local measurement failures and failed
+control teardown. Control loss takes error precedence; otherwise the measurement
+error is retained, followed by caller cancellation and then a teardown error.
+
+A bounded Full summary callback runs after EndDelay and Stop, with the same final
+flags as the returned summary. Cancellation during EndDelay or Stop is still
+returned, but already completed measurements retain their counts and are not
+marked aborted. `Aborted` and `Pending` describe unfinished measurement windows,
+not cleanup. Completed continuous windows stream immediately and remain valid
+when a later window fails; final aborted windows wait for teardown classification.
 
 ## Responders
 

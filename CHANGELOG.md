@@ -79,6 +79,8 @@ Work in progress toward the first release (v0.1.0).
 
 ### Fixed
 
+- **Library sender**: reconcile Full cancellation/control/Stop outcomes before final summary delivery; preserve completed continuous windows and canonicalize mapped IPv4 source addresses before family checks.
+
 Found by the reviews from the maintenance and operations point of view (A: statistics and monitoring, B: daemon / CLI / configuration / distribution, C: protocol and data path).
 
 - JSON Lines: one failed write (a transient ENOSPC, for example) stopped the output until a restart. The file is now opened again a second later, and the failure and the recovery are logged.

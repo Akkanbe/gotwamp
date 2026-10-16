@@ -91,8 +91,10 @@ func ValidateFull(cfg Config, full FullConfig) error { return engine.ValidateFul
 // RunFull negotiates and measures one session on its own control connection.
 // It supports bounded runs and continuous windows. Errors of control exchanges
 // are *gotwamp.ControlError; errors.Is matches the public control sentinels.
-// Cancellation aborts results and attempts Stop-Sessions for at most two
-// additional seconds before releasing the control connection and test socket.
+// Cancellation aborts open measurement windows and attempts Stop-Sessions for
+// at most two additional seconds. Cancellation during teardown preserves
+// completed packet counts and abort/pending state. Bounded and aborted-window
+// summary hooks run after teardown; completed continuous windows stream immediately.
 func RunFull(ctx context.Context, cfg Config, full FullConfig, opts ...Option) (Summary, error) {
 	return engine.RunFull(ctx, cfg, full, opts...)
 }
