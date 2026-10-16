@@ -77,8 +77,8 @@ and use the same checks as `RunFull` before dialing. Static validation rejects
 reflection fields without the requested extension and padding that cannot work
 with any allowed mode and requested layout. Features are optional preferences;
 the actual negotiated security mode and layout are checked again before the
-session request. DSCP/ECN monitoring is currently rejected in Full mode. An optional `Accepted`
-callback receives `gotwamp.SID` and the negotiated reflector endpoint; `Started`
+session request. DSCP/ECN monitoring is currently rejected in Full mode.
+An optional `Accepted` callback receives `gotwamp.SID` and the negotiated reflector endpoint; `Started`
 marks successful Start-Ack. These callbacks also must return quickly.
 
 After cancellation the sender attempts Stop-Sessions for at most two additional

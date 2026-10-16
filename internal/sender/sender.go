@@ -121,8 +121,8 @@ type Config struct {
 	MaxSamples int
 	// DSCPECNMonitoring reads the S-DSCP-ECN octet at offset 41 of the
 	// replies (RFC 7750): the DSCP and ECN with which the test packets
-	// reached the reflector. The reflector must write it: a Light reflector
-	// configured for it, or a Full session that negotiated Modes bit 8.
+	// reached the reflector. The Light reflector must be configured for it.
+	// Full mode currently cannot negotiate this extension and rejects it.
 	// Replies shorter than 44 octets are then malformed.
 	DSCPECNMonitoring bool
 	// STAMP sends STAMP Session-Sender packets (RFC 8762 §4.2.1, TWAMP Light
