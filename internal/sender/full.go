@@ -267,25 +267,20 @@ func RunFull(ctx context.Context, cfg Config, fc FullConfig, opts ...Option) (Su
 		f(&o)
 	}
 	var held []Summary
-	var completed Summary
-	var haveCompleted bool
 	h := o.hooks
 	report := h.Summary
-	h.Summary = func(s Summary) {
-		s.SID = sess.SID
-		s.Invalid = s.Invalid || c.Err() != nil
-		if cfg.Count > 0 || s.Aborted {
-			if report != nil {
+	if report != nil {
+		h.Summary = func(s Summary) {
+			s.SID = sess.SID
+			s.Invalid = s.Invalid || c.Err() != nil
+			if cfg.Count > 0 || s.Aborted {
 				held = append(held, s)
-			}
-		} else {
-			completed, haveCompleted = s, true
-			if report != nil {
+			} else {
 				report(s)
 			}
 		}
+		opts = append(opts, WithHooks(h))
 	}
-	opts = append(opts, WithHooks(h))
 	snd, err := New(cfg, append(opts, WithConn(conn), withFull(), withSecurity(sess.Security, sess.TestKeys), withLayout(sess.Layout, sess.ServerOctets))...)
 	if err != nil {
 		return Summary{}, err
@@ -337,12 +332,7 @@ func RunFull(ctx context.Context, cfg Config, fc FullConfig, opts ...Option) (Su
 		}
 	}
 	invalid := failed || stopErr != nil
-	if cfg.Count == 0 && !sum.Aborted && haveCompleted {
-		// Failure between windows does not change a completed window's result.
-		sum = completed
-	} else {
-		sum.Invalid = sum.Invalid || invalid
-	}
+	sum.Invalid = sum.Invalid || invalid
 	for _, s := range held {
 		s.Invalid = s.Invalid || invalid
 		report(s)

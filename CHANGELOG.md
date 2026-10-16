@@ -80,6 +80,7 @@ Work in progress toward the first release (v0.1.0).
 ### Fixed
 
 - **Library sender**: reconcile Full cancellation/control/Stop outcomes before final summary delivery; preserve completed continuous windows and canonicalize mapped IPv4 source addresses before family checks.
+- **ISC control client**: resume connection monitoring after session-state updates, preventing a normal disconnect after Stop-N-Ack from invalidating a stopped session.
 
 Found by the reviews from the maintenance and operations point of view (A: statistics and monitoring, B: daemon / CLI / configuration / distribution, C: protocol and data path).
 

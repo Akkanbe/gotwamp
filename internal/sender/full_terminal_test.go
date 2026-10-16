@@ -291,7 +291,7 @@ func TestFullContinuousAbortKeepsEveryOpenWindow(t *testing.T) {
 	})
 }
 
-func TestFullContinuousTerminalStateBetweenWindows(t *testing.T) {
+func TestFullContinuousTerminalStateWithoutPendingPackets(t *testing.T) {
 	for _, event := range []string{"control_loss", "cancel_with_stop_failure"} {
 		for _, withSummary := range []bool{false, true} {
 			name := event + "/without_summary_hook"
@@ -309,6 +309,8 @@ func TestFullContinuousTerminalStateBetweenWindows(t *testing.T) {
 					fc, closeControl := terminalConfig(t, false, newLink(), stopErr, func(peer net.Conn, stopped <-chan struct{}) { <-stopped; _, _ = io.Copy(io.Discard, peer) })
 					cfg := testConfig(0)
 					cfg.Interval, cfg.Window = 100*time.Millisecond, 50*time.Millisecond
+					// The current window stays open until the next one starts,
+					// even when every packet sent so far already has a reply.
 					var hooked []Summary
 					hooks := Hooks{Packet: func(PacketResult) {
 						time.AfterFunc(20*time.Millisecond, func() {
@@ -330,8 +332,8 @@ func TestFullContinuousTerminalStateBetweenWindows(t *testing.T) {
 					if !errors.Is(err, want) {
 						t.Errorf("error=%v want=%v", err, want)
 					}
-					if sum.Invalid || sum.Aborted || sum.Received != 1 || sum.Pending != 0 {
-						t.Errorf("completed window changed: %+v", sum)
+					if !sum.Invalid || !sum.Aborted || sum.Received != 1 || sum.Pending != 0 {
+						t.Errorf("open window classification: %+v", sum)
 					}
 					if withSummary && (len(hooked) != 1 || !reflect.DeepEqual(sum, hooked[0])) {
 						t.Errorf("hooked=%+v returned=%+v", hooked, sum)
