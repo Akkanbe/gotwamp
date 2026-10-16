@@ -148,6 +148,23 @@ type Request struct {
 	DSCP uint8
 }
 
+// ValidateFeatures checks reflection fields against requested or negotiated features.
+func (r Request) ValidateFeatures(features wire.Modes) error {
+	if (r.OctetsToReflect != 0 || r.PaddingToReflect != 0) && !features.Has(wire.ModeReflectOctets) {
+		return errors.New("octets to reflect need reflect octets mode, which was not requested or negotiated")
+	}
+	return nil
+}
+
+// ValidateLayout checks the request against one possible or negotiated test mode.
+func (r Request) ValidateLayout(mode wire.SecurityMode, features wire.Modes) error {
+	if err := r.ValidateFeatures(features); err != nil {
+		return err
+	}
+	layout := wire.PaddingLayout{SymmetricalSize: features.Has(wire.ModeSymmetricalSize), ReflectLength: r.PaddingToReflect}
+	return layout.Validate(mode.TestMode(), r.PaddingLength)
+}
+
 // Session is a session the server accepted.
 type Session struct {
 	// SID identifies the session.
@@ -454,12 +471,9 @@ func (c *Client) buildRequest(r Request) (wire.RequestTWSession, netip.Addr, err
 		req.StartTime = ntptime.FromTime(r.StartTime)
 	}
 	if r.OctetsToReflect != 0 || r.PaddingToReflect != 0 {
-		if !c.features.Has(wire.ModeReflectOctets) {
-			return wire.RequestTWSession{}, netip.Addr{}, errors.New("octets to reflect need reflect octets mode, which was not negotiated")
-		}
 		req.OctetsToReflect, req.PaddingToReflect = r.OctetsToReflect, r.PaddingToReflect
 	}
-	if err := c.layout(&req).Validate(c.mode.TestMode(), req.PaddingLength); err != nil {
+	if err := r.ValidateLayout(c.mode.TestMode(), c.features); err != nil {
 		return wire.RequestTWSession{}, netip.Addr{}, err
 	}
 	if !r.ZeroAddresses {

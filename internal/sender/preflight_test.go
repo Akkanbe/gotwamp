@@ -20,12 +20,20 @@ func TestFullPreflightBeforeIO(t *testing.T) {
 			f.KeyID = string(make([]byte, 81))
 			f.Passphrase = []byte("test")
 		},
-		"unknown security":    func(_ *Config, f *FullConfig) { f.Modes = 1 << 20 },
-		"unsupported feature": func(_ *Config, f *FullConfig) { f.Features = wire.ModePTPv2Timestamp },
-		"timestamping":        func(c *Config, _ *FullConfig) { c.Timestamping = 255 },
-		"read buffer":         func(c *Config, _ *FullConfig) { c.ReadBuffer = -1 },
-		"method error":        func(c *Config, _ *FullConfig) { c.MethodError = -1 },
-		"samples":             func(c *Config, _ *FullConfig) { c.MaxSamples = -1 },
+		"unknown security":                 func(_ *Config, f *FullConfig) { f.Modes = 1 << 20 },
+		"unsupported feature":              func(_ *Config, f *FullConfig) { f.Features = wire.ModePTPv2Timestamp },
+		"timestamping":                     func(c *Config, _ *FullConfig) { c.Timestamping = 255 },
+		"read buffer":                      func(c *Config, _ *FullConfig) { c.ReadBuffer = -1 },
+		"method error":                     func(c *Config, _ *FullConfig) { c.MethodError = -1 },
+		"reflect length without feature":   func(_ *Config, f *FullConfig) { f.PaddingToReflect = 1 },
+		"reflected octets without feature": func(_ *Config, f *FullConfig) { f.OctetsToReflect = 1 },
+		"impossible reflect padding": func(c *Config, f *FullConfig) {
+			c.Padding = 8
+			f.Features = wire.ModeReflectOctets | wire.ModeSymmetricalSize
+			f.PaddingToReflect = 8
+		},
+		"full dscp ecn monitoring": func(c *Config, _ *FullConfig) { c.DSCPECNMonitoring = true },
+		"samples":                  func(c *Config, _ *FullConfig) { c.MaxSamples = -1 },
 	} {
 		t.Run(name, func(t *testing.T) {
 			cfg, full := DefaultConfig(server), FullConfig{Server: server}
@@ -56,5 +64,27 @@ func TestLightPreflight(t *testing.T) {
 		if _, err := New(cfg); err == nil {
 			t.Fatal("invalid configuration accepted")
 		}
+	}
+}
+
+func TestFullPreflightAllowsNegotiableLayout(t *testing.T) {
+	server := netip.MustParseAddrPort("127.0.0.1:862")
+	for _, tc := range []struct {
+		name            string
+		modes, features wire.Modes
+		padding         int
+	}{
+		{"security preference", wire.ModeAuthenticated | wire.ModeUnauthenticated, wire.ModeReflectOctets, 30},
+		{"optional symmetrical size", wire.ModeAuthenticated, wire.ModeReflectOctets | wire.ModeSymmetricalSize, 8},
+		{"mixed test packets", wire.ModeMixed, wire.ModeReflectOctets, 30},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := DefaultConfig(server)
+			cfg.Padding = tc.padding
+			full := FullConfig{Server: server, Modes: tc.modes, Features: tc.features, PaddingToReflect: 1, KeyID: "test", Passphrase: []byte("test secret")}
+			if err := ValidateFull(cfg, full); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }

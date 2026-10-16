@@ -418,6 +418,8 @@ func normalize(cfg *Config, full bool) error {
 		cfg.StatelessReflector = false
 	}
 	switch {
+	case cfg.DSCPECNMonitoring && full:
+		return errors.New("sender: dscp_ecn_monitoring is supported in light mode only")
 	case cfg.STAMP && full:
 		return errors.New("sender: stamp is for TWAMP Light; TWAMP Full negotiates its packets")
 	case cfg.STAMP && cfg.DSCPECNMonitoring:

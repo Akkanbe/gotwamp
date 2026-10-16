@@ -152,18 +152,50 @@ func (fc FullConfig) Validate() error {
 	case fc.EndDelay < 0:
 		return fmt.Errorf("sender: end delay %v is negative", fc.EndDelay)
 	}
-	return (client.Config{Modes: fc.Modes, KeyID: fc.KeyID, Passphrase: fc.Passphrase, Features: fc.Features}).Validate()
+	if err := (client.Config{Modes: fc.Modes, KeyID: fc.KeyID, Passphrase: fc.Passphrase, Features: fc.Features}).Validate(); err != nil {
+		return err
+	}
+	return (client.Request{OctetsToReflect: fc.OctetsToReflect, PaddingToReflect: fc.PaddingToReflect}).ValidateFeatures(fc.Features)
 }
 
 // ValidateFull checks both configurations, including security and socket options,
 // without dialing or binding. Target is negotiated and is ignored.
 func ValidateFull(cfg Config, fc FullConfig) error {
-	fc = fc.WithDefaults()
+	_, err := normalizeFull(cfg, fc.WithDefaults())
+	return err
+}
+
+// normalizeFull rejects local configuration errors before transport acquisition.
+func normalizeFull(cfg Config, fc FullConfig) (Config, error) {
 	if err := fc.Validate(); err != nil {
-		return err
+		return Config{}, err
 	}
 	cfg.Target = fc.Server
-	return normalize(&cfg, true)
+	if err := normalize(&cfg, true); err != nil {
+		return Config{}, err
+	}
+	req := client.Request{
+		PaddingLength:   uint32(cfg.Padding), //nolint:gosec // G115: normalize bounds padding to 0-9000
+		OctetsToReflect: fc.OctetsToReflect, PaddingToReflect: fc.PaddingToReflect,
+	}
+	modes := fc.Modes
+	if modes == 0 {
+		modes = wire.ModeUnauthenticated
+	}
+	var errs []error
+	for _, mode := range []wire.SecurityMode{wire.SecurityUnauthenticated, wire.SecurityAuthenticated, wire.SecurityEncrypted, wire.SecurityMixed} {
+		if !modes.Has(mode.Mode()) {
+			continue
+		}
+		if err := req.ValidateLayout(mode, fc.Features); err != nil {
+			errs = append(errs, err)
+		} else {
+			return cfg, nil
+		}
+	}
+	// A preference mask need only have one possible valid outcome. The actual
+	// negotiated mode and features are checked again before Request-TW-Session.
+	return Config{}, fmt.Errorf("sender: request layout: %w", errors.Join(errs...))
 }
 
 // RunFull carries out one TWAMP Full run on its own control connection
@@ -179,15 +211,10 @@ func ValidateFull(cfg Config, fc FullConfig) error {
 // error matching client.ErrControlLost.
 func RunFull(ctx context.Context, cfg Config, fc FullConfig, opts ...Option) (Summary, error) {
 	fc = fc.WithDefaults()
-	if err := fc.Validate(); err != nil {
+	var err error
+	if cfg, err = normalizeFull(cfg, fc); err != nil {
 		return Summary{}, err
 	}
-	check := cfg
-	check.Target = fc.Server
-	if err := normalize(&check, true); err != nil {
-		return Summary{}, err
-	}
-	cfg = check
 
 	tcp, err := fc.dial(ctx, cfg.Source.Addr())
 	if err != nil {

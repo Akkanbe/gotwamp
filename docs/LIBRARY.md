@@ -73,7 +73,11 @@ Mixed mode encrypts control but leaves test packets unauthenticated.
 
 `FullConfig.Validate` validates control settings and credentials;
 `sender.ValidateFull` additionally checks test and socket settings. Both are pure
-and use the same checks as `RunFull` before dialing. An optional `Accepted`
+and use the same checks as `RunFull` before dialing. Static validation rejects
+reflection fields without the requested extension and padding that cannot work
+with any allowed mode and requested layout. Features are optional preferences;
+the actual negotiated security mode and layout are checked again before the
+session request. DSCP/ECN monitoring is currently rejected in Full mode. An optional `Accepted`
 callback receives `gotwamp.SID` and the negotiated reflector endpoint; `Started`
 marks successful Start-Ack. These callbacks also must return quickly.
 
