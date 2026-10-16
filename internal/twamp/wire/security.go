@@ -3,6 +3,8 @@ package wire
 import (
 	"encoding/binary"
 
+	"github.com/Akkanbe/gotwamp"
+
 	"github.com/Akkanbe/gotwamp/internal/twamp/errest"
 	"github.com/Akkanbe/gotwamp/internal/twamp/ntptime"
 )
@@ -11,13 +13,13 @@ import (
 // follow RFC 5357 as corrected by EID 5045 and EID 5046.
 const (
 	// SenderHeaderSize is the unauthenticated Session-Sender packet without padding.
-	SenderHeaderSize = 14
+	SenderHeaderSize = gotwamp.SenderHeaderSize
 	// ReflectorHeaderSize is the unauthenticated Session-Reflector packet without padding.
-	ReflectorHeaderSize = 41
+	ReflectorHeaderSize = gotwamp.ReflectorHeaderSize
 	// AuthSenderHeaderSize is the authenticated or encrypted Session-Sender packet without padding.
-	AuthSenderHeaderSize = 48
+	AuthSenderHeaderSize = gotwamp.AuthSenderHeaderSize
 	// AuthReflectorHeaderSize is the authenticated or encrypted Session-Reflector packet without padding.
-	AuthReflectorHeaderSize = 112
+	AuthReflectorHeaderSize = gotwamp.AuthReflectorHeaderSize
 	// hmacSize is the length of every HMAC field, in control messages and
 	// test packets.
 	//
@@ -25,83 +27,23 @@ const (
 	hmacSize = 16
 	// DefaultPaddingLength makes unauthenticated packets the same size in both
 	// directions (SPEC appendix A).
-	DefaultPaddingLength = ReflectorHeaderSize - SenderHeaderSize
+	DefaultPaddingLength = gotwamp.DefaultPaddingLength
 )
 
-// SecurityMode is the security mode negotiated in Set-Up-Response: one of the
-// bits 0–3 of Modes.
-type SecurityMode uint8
+// SecurityMode is the canonical public value.
+type SecurityMode = gotwamp.SecurityMode
 
-// Security modes, with the value of their Modes bit.
-const (
-	SecurityUnauthenticated = SecurityMode(ModeUnauthenticated)
-	SecurityAuthenticated   = SecurityMode(ModeAuthenticated)
-	SecurityEncrypted       = SecurityMode(ModeEncrypted)
-	SecurityMixed           = SecurityMode(ModeMixed) // RFC 5618: encrypted control, unauthenticated test
-)
+// SecurityUnauthenticated is the canonical public constant.
+const SecurityUnauthenticated = gotwamp.SecurityUnauthenticated
 
-// Valid reports whether s is one of the four security modes.
-func (s SecurityMode) Valid() bool {
-	switch s {
-	case SecurityUnauthenticated, SecurityAuthenticated, SecurityEncrypted, SecurityMixed:
-		return true
-	default:
-		return false
-	}
-}
+// SecurityAuthenticated is the canonical public constant.
+const SecurityAuthenticated = gotwamp.SecurityAuthenticated
 
-// Mode returns the Modes bit of s.
-func (s SecurityMode) Mode() Modes { return Modes(s) }
+// SecurityEncrypted is the canonical public constant.
+const SecurityEncrypted = gotwamp.SecurityEncrypted
 
-// TestMode returns the mode TWAMP-Test packets use under s: mixed mode sends
-// unauthenticated test packets.
-func (s SecurityMode) TestMode() SecurityMode {
-	if s == SecurityMixed {
-		return SecurityUnauthenticated
-	}
-	return s
-}
-
-// SenderHeaderSize returns the Session-Sender packet size without padding, or
-// 0 if s is not valid.
-func (s SecurityMode) SenderHeaderSize() int {
-	switch s.TestMode() {
-	case SecurityUnauthenticated:
-		return SenderHeaderSize
-	case SecurityAuthenticated, SecurityEncrypted:
-		return AuthSenderHeaderSize
-	default:
-		return 0
-	}
-}
-
-// ReflectorHeaderSize returns the Session-Reflector packet size without
-// padding, or 0 if s is not valid.
-func (s SecurityMode) ReflectorHeaderSize() int {
-	switch s.TestMode() {
-	case SecurityUnauthenticated:
-		return ReflectorHeaderSize
-	case SecurityAuthenticated, SecurityEncrypted:
-		return AuthReflectorHeaderSize
-	default:
-		return 0
-	}
-}
-
-// PaddingTruncation returns how much larger the reflector header is than the
-// sender header: the least padding that gives both directions the same size,
-// and what the reflector drops from the end of the padding (27 or 64).
-func (s SecurityMode) PaddingTruncation() int {
-	return s.ReflectorHeaderSize() - s.SenderHeaderSize()
-}
-
-// String returns the mode name.
-func (s SecurityMode) String() string {
-	if !s.Valid() {
-		return "SecurityMode(" + Modes(s).String() + ")"
-	}
-	return Modes(s).String()
-}
+// SecurityMixed is the canonical public constant.
+const SecurityMixed = gotwamp.SecurityMixed
 
 // AuthSenderPacket is the plaintext of an authenticated or encrypted
 // Session-Sender packet (RFC 4656 §4.1.2): Sequence Number at 0, MBZ 4–15,

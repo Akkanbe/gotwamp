@@ -168,7 +168,11 @@ gotwamp/
 │   ├── nfpm/                # deb / rpm install scripts
 │   ├── containerlab/        # interop lab definition, lab image and NOS configurations
 │   └── staging/             # docker compose staging: configs, test-only keys, netem.sh, scenarios/, observability/
+├── sender/                 # curated public sender entry points (Light / Full)
+├── reflector/              # curated public reflector services (Light / Full)
+├── *.go                    # canonical shared public values; no I/O
 ├── test/
+│   ├── library/             # independent embedding consumer module (make test-library)
 │   ├── golden/              # fixed byte sequences derived from RFC figures (encode/decode verification)
 │   ├── component/           # integration tests using loopback / netns + netem, tshark decoding
 │   ├── soak/                # soak test (make soak)
@@ -193,6 +197,7 @@ gotwamp/
 ```
 
 Dependency direction principle (SPEC §4.3): `cmd` → `daemon`/`cli` → (`schedule`, `store`, `export`, `config`) → (`control`, `sender`, `reflector`) → (`tstamp`, `clock`, `stats`) → `twamp` (innermost layer).
+Public entry points and canonical value ownership follow ADR 0015; internal engine imports remain private runtime and transport seams, not a second implementation.
 The `twamp` package is a pure encoding layer that does not depend even on `net`, and is hardened with fuzz tests and golden tests.
 
 ---

@@ -2,18 +2,10 @@
 
 package stats
 
-// Hops summarizes the hop counts of one direction over a run or window.
-// When Count is zero the other fields are zero and undefined.
-type Hops struct {
-	// Count is the number of packets with a known hop count.
-	Count uint64
-	// Min is the smallest hop count observed.
-	Min int
-	// Max is the largest hop count observed.
-	Max int
-	// Mode is the most frequent hop count, the smallest one on a tie.
-	Mode int
-}
+import "github.com/Akkanbe/gotwamp"
+
+// Hops is the canonical public value.
+type Hops = gotwamp.Hops
 
 // hopCounter is a histogram of hop counts.
 type hopCounter [256]uint64

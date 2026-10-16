@@ -94,7 +94,7 @@ func TestDistributionMoments(t *testing.T) {
 	if d.Mean != 5*time.Millisecond || d.StdDev != 2138090 {
 		t.Errorf("distribution = %+v", d)
 	}
-	if got := (Distribution{}).shift(time.Second); got != (Distribution{}) {
+	if got := shift(Distribution{}, time.Second); got != (Distribution{}) {
 		t.Errorf("shift of empty = %+v", got)
 	}
 }

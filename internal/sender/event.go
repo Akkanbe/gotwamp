@@ -60,7 +60,8 @@ type Summary struct {
 	SID wire.SID
 	// Invalid reports that the results may be wrong: the TWAMP-Control
 	// connection of a Full run was lost (SPEC §5.6, RunSummary.invalid), or
-	// the run failed after the summary was made.
+	// the run failed after the summary was made. Already completed continuous
+	// windows retain the classification they had when published.
 	Invalid bool
 	// Malformed counts replies from the reflector that could not be decoded,
 	// and those dropped for an Error Estimate Multiplier of 0 with

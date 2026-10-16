@@ -178,19 +178,19 @@ func TestRunFullRejected(t *testing.T) {
 // scripted runs a TWAMP-Control server script on the far end of a pipe that
 // RunFull dials, with the test socket on loopback.
 func scripted(script func(conn net.Conn)) sender.FullConfig {
-	return sender.FullConfig{
+	return sender.WithFullDial(sender.FullConfig{
 		Server: netip.MustParseAddrPort("127.0.0.1:862"),
-		Dial: func(_ context.Context, _ netip.Addr, server netip.AddrPort) (net.Conn, error) {
-			c, s := net.Pipe()
-			go func() {
-				defer s.Close()
-				script(s)
-			}()
-			local := net.TCPAddrFromAddrPort(netip.MustParseAddrPort("127.0.0.1:40000"))
-			return tcpAddrs{c, local, net.TCPAddrFromAddrPort(server)}, nil
-		},
+
 		ControlTimeout: time.Second,
-	}
+	}, func(_ context.Context, _ netip.Addr, server netip.AddrPort) (net.Conn, error) {
+		c, s := net.Pipe()
+		go func() {
+			defer s.Close()
+			script(s)
+		}()
+		local := net.TCPAddrFromAddrPort(netip.MustParseAddrPort("127.0.0.1:40000"))
+		return tcpAddrs{c, local, net.TCPAddrFromAddrPort(server)}, nil
+	})
 }
 
 type tcpAddrs struct {
@@ -225,9 +225,9 @@ func TestRunFullControlErrors(t *testing.T) {
 	}{
 		{
 			name: "connect failure",
-			fc: sender.FullConfig{Server: netip.MustParseAddrPort("127.0.0.1:862"), Dial: func(context.Context, netip.Addr, netip.AddrPort) (net.Conn, error) {
+			fc: sender.WithFullDial(sender.FullConfig{Server: netip.MustParseAddrPort("127.0.0.1:862")}, func(context.Context, netip.Addr, netip.AddrPort) (net.Conn, error) {
 				return nil, syscall.ECONNREFUSED
-			}},
+			}),
 			stage: client.StageConnect, cause: syscall.ECONNREFUSED,
 		},
 		{
@@ -300,13 +300,13 @@ func TestRunFullStopAfterSocketError(t *testing.T) {
 		_ = s.Decode(recv(c, wire.StopSessionsSize))
 		stop <- s
 	})
-	fc.Listen = func(network string, local netip.AddrPort, opts tstamp.Options) (tstamp.Conn, error) {
+	fc = sender.WithFullListen(fc, func(network string, local netip.AddrPort, opts tstamp.Options) (tstamp.Conn, error) {
 		c, err := tstamp.Listen(network, local, opts)
 		if err != nil {
 			return nil, err
 		}
 		return failingRead{c}, nil
-	}
+	})
 	_, err := sender.RunFull(t.Context(), fullConfig(1000), fc)
 	if err == nil || errors.As(err, new(*client.Error)) {
 		t.Fatalf("err = %v, want the socket error", err)
@@ -332,13 +332,13 @@ func TestRunFullSenderPortScan(t *testing.T) {
 	addr, _ := fullServer(t, server.Config{})
 	var tried []uint16
 	fc := sender.FullConfig{Server: addr, SenderPorts: sender.PortRange{Low: 49152, High: 65535}}
-	fc.Listen = func(network string, local netip.AddrPort, opts tstamp.Options) (tstamp.Conn, error) {
+	fc = sender.WithFullListen(fc, func(network string, local netip.AddrPort, opts tstamp.Options) (tstamp.Conn, error) {
 		tried = append(tried, local.Port())
 		if len(tried) < 3 {
 			return nil, &net.OpError{Op: "listen", Err: syscall.EADDRINUSE}
 		}
 		return tstamp.Listen(network, local, opts)
-	}
+	})
 	sum, err := sender.RunFull(t.Context(), fullConfig(3), fc)
 	if err != nil {
 		t.Fatal(err)
@@ -348,9 +348,9 @@ func TestRunFullSenderPortScan(t *testing.T) {
 	}
 	fc.SenderPorts = sender.PortRange{Low: 50000, High: 50000}
 	tried = nil
-	fc.Listen = func(string, netip.AddrPort, tstamp.Options) (tstamp.Conn, error) {
+	fc = sender.WithFullListen(fc, func(string, netip.AddrPort, tstamp.Options) (tstamp.Conn, error) {
 		return nil, syscall.EADDRINUSE
-	}
+	})
 	if _, err := sender.RunFull(t.Context(), fullConfig(3), fc); !errors.Is(err, syscall.EADDRINUSE) {
 		t.Errorf("exhausted range: %v", err)
 	}
@@ -370,10 +370,10 @@ func TestRunFullInvalid(t *testing.T) {
 		"mismatched host": {func() sender.Config { c := fullConfig(1); c.Source = netip.MustParseAddrPort("[::1]:0"); return c }(), sender.FullConfig{Server: ok}},
 	} {
 		dialed := false
-		tc.fc.Dial = func(context.Context, netip.Addr, netip.AddrPort) (net.Conn, error) {
+		tc.fc = sender.WithFullDial(tc.fc, func(context.Context, netip.Addr, netip.AddrPort) (net.Conn, error) {
 			dialed = true
 			return nil, errors.New("dialed")
-		}
+		})
 		if _, err := sender.RunFull(t.Context(), tc.cfg, tc.fc); err == nil || dialed {
 			t.Errorf("%s: err %v, dialed %v", name, err, dialed)
 		}
@@ -528,18 +528,17 @@ func TestRunFullExtensions(t *testing.T) {
 			cfg := fullConfig(10)
 			cfg.Padding = tt.padding
 			var sc *sizeConn
-			fc := sender.FullConfig{
+			fc := sender.WithFullListen(sender.FullConfig{
 				Server: addr, Features: tt.features, OctetsToReflect: tt.octets, PaddingToReflect: tt.toReflect,
 				Modes: tt.security, KeyID: "alice", Passphrase: []byte("secretpass"),
-				Listen: func(network string, local netip.AddrPort, opts tstamp.Options) (tstamp.Conn, error) {
-					c, err := tstamp.Listen(network, local, opts)
-					if err != nil {
-						return nil, err
-					}
-					sc = &sizeConn{Conn: c}
-					return sc, nil
-				},
-			}
+			}, func(network string, local netip.AddrPort, opts tstamp.Options) (tstamp.Conn, error) {
+				c, err := tstamp.Listen(network, local, opts)
+				if err != nil {
+					return nil, err
+				}
+				sc = &sizeConn{Conn: c}
+				return sc, nil
+			})
 			sum, err := sender.RunFull(t.Context(), cfg, fc)
 			if err != nil {
 				t.Fatal(err)

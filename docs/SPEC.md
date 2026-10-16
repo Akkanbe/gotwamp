@@ -275,7 +275,7 @@ The results of the interview (2026-10-03) are organised here as requirements. Fo
 
 - A single `gotwampd` process can enable both the sender and reflector roles at the same time (FR-07). Each role is switched on/off independently in the configuration file
 - `gotwamp` acts only as a gRPC client and never sends or receives packets itself. Ad hoc measurements are also performed by the daemon on its behalf through the `RunTest` RPC (FR-09)
-- The protocol implementation (`internal/twamp`, `control`, `sender`, `reflector`) is structured as libraries independent of the daemon, so that it can be published as `pkg/` in the future
+- Public `sender` and `reflector` packages expose curated embedding APIs over the internal engines. The root package owns shared public values; wire codecs, control state machines, socket backends and accumulation remain internal (ADR 0015, [library guide](LIBRARY.md)).
 
 ### 4.2 Internal Components of gotwampd
 
@@ -310,6 +310,8 @@ cmd/gotwampd, cmd/gotwamp
                        └─ internal/twamp/{wire, ntptime, errest}   ← standard library only, no I/O
 ```
 
+- Public `sender` / `reflector` entry points depend on the corresponding internal engine; engines and codecs depend on canonical root values. The root package uses the standard library only and performs no I/O. Embedding does not pull in the daemon, scheduler, storage or exporters.
+- Full reflector composition is owned by `internal/reflector.FullService`, shared by the daemon and public API. Pure validation precedes binding; responder cancellation/Close joins owned workers. Public types and lifecycle are specified in [LIBRARY.md](LIBRARY.md).
 - `internal/twamp` does not depend on `net`, `time.Now`, or randomness. Random data (padding / SID / Challenge) is injected by the caller as an `io.Reader`
 - `internal/tstamp` and `internal/clock` are Linux-specific (`//go:build linux`). Stubs are provided for non-Linux targets, but their operation is not guaranteed (NFR: Linux only)
 
@@ -511,7 +513,7 @@ The Client treats every non-zero value as a failure and records the value in the
 
 - While ACTIVE, nothing is sent on the control connection (RFC 4656 §3.4). However, reception continues in order to detect disconnection by the Server
 - The default is one control connection and one session per run. Multiple sessions on the same connection and connection reuse are deferred (§13)
-- There is a setting to wait `end_delay` (default 0s; twping uses 1s) before sending Stop-Sessions
+- There is a setting to wait `end_delay` (default 0s; twping uses 1s) before sending Stop-Sessions. Cancellation or control loss interrupts this wait. Bounded summaries are finalized after Stop; completed continuous windows are published immediately. Measurement completion counts and abort/pending state are retained when cancellation happens during teardown.
 
 Client behavior when Individual Session Control (RFC 5938) has been negotiated:
 

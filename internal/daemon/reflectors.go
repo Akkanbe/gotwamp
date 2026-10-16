@@ -8,7 +8,6 @@ import (
 	"net/netip"
 	"strings"
 	"sync"
-	"time"
 
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -16,7 +15,6 @@ import (
 	gotwampv1 "github.com/Akkanbe/gotwamp/internal/api/gen/gotwamp/v1"
 	"github.com/Akkanbe/gotwamp/internal/config"
 	"github.com/Akkanbe/gotwamp/internal/control/keystore"
-	"github.com/Akkanbe/gotwamp/internal/control/server"
 	"github.com/Akkanbe/gotwamp/internal/export/prom"
 	"github.com/Akkanbe/gotwamp/internal/reflector"
 	"github.com/Akkanbe/gotwamp/internal/tstamp"
@@ -37,11 +35,7 @@ type reflectors struct {
 	//declscope:private
 	light *reflector.Light
 	//declscope:private
-	full *reflector.Full
-	//declscope:private
-	control *server.Server
-	//declscope:private
-	controlLns []net.Listener
+	full *reflector.FullService
 }
 
 // startReflectors binds every listener of the reflector role. Call serve to
@@ -72,74 +66,58 @@ func startReflectors(cfg *config.Config, keys keystore.Store, open *socketOpener
 	case "none":
 		verify = reflector.VerifyNone
 	}
-	r.full, err = reflector.NewFull(reflector.FullConfig{
-		VerifySender:   verify,
-		TTL:            cfg.Reflector.TTL,
-		MaxPacketSize:  cfg.Reflector.MaxPacketSize,
-		Timestamping:   timestampingMode(cfg.Daemon.Timestamping),
-		UserspaceError: cfg.Daemon.Clock.UserspaceError,
-		KernelError:    cfg.Daemon.Clock.KernelError,
-	}, reflector.Deps{Listen: open.listen, Clock: clockState, Logger: log.With("component", "full")})
+	fcfg, err := controlConfig(c, keys)
 	if err != nil {
 		r.close()
 		return nil, err
 	}
-	scfg, err := controlConfig(c, keys)
-	if err != nil {
-		r.close()
-		return nil, err
-	}
-	if r.control, err = server.New(scfg, r.full, log.With("component", "control")); err != nil {
-		r.close()
-		return nil, err
-	}
+	fcfg.VerifySender = verify
+	fcfg.TTL = cfg.Reflector.TTL
+	fcfg.MaxPacketSize = cfg.Reflector.MaxPacketSize
+	fcfg.Timestamping = timestampingMode(cfg.Daemon.Timestamping)
+	fcfg.UserspaceError = cfg.Daemon.Clock.UserspaceError
+	fcfg.KernelError = cfg.Daemon.Clock.KernelError
 	for _, s := range c.Listen {
 		ap, err := config.ParseAddrPort(s)
 		if err != nil {
 			r.close()
 			return nil, fmt.Errorf("reflector.control.listen: %w", err)
 		}
-		network := "tcp6"
-		if ap.Addr().Is4() {
-			network = "tcp4"
-		}
-		ln, err := listenControl(network, ap)
-		if err != nil {
-			r.close()
-			return nil, fmt.Errorf("twamp-control listen %v: %w", ap, err)
-		}
-		r.controlLns = append(r.controlLns, ln)
+		fcfg.Listeners = append(fcfg.Listeners, ap)
+	}
+	r.full, err = reflector.ListenFull(fcfg, reflector.Deps{
+		Listen: open.listen, Clock: clockState, Logger: log.With("component", "full"),
+		ControlLogger: log.With("component", "control"),
+		ListenControl: listenControl,
+	})
+	if err != nil {
+		r.close()
+		return nil, err
 	}
 	log.Info("TWAMP-Control server listening", "addresses", r.controlAddrs(), "modes", c.OfferedModes(), "extensions", c.Extensions)
 	return r, nil
 }
 
-// controlKeepAlive is the TCP keepalive of the accepted control
-// connections, as the Client's (SPEC §5.1, the Junos defaults).
-var controlKeepAlive = net.KeepAliveConfig{Enable: true, Idle: 120 * time.Second, Interval: 5 * time.Second, Count: 6}
-
-// listenControl binds a TWAMP-Control listener; the connections it accepts
-// keep controlKeepAlive.
+// listenControl retains the daemon's keepalive check over the shared listener.
 func listenControl(network string, ap netip.AddrPort) (net.Listener, error) {
-	lc := net.ListenConfig{KeepAliveConfig: controlKeepAlive}
-	return lc.Listen(context.Background(), network, ap.String())
+	return reflector.ListenControl(network, ap)
 }
 
 // controlConfig translates reflector.control; keys are its keys file, nil
 // without one.
-func controlConfig(c config.ControlServer, keys keystore.Store) (server.Config, error) {
+func controlConfig(c config.ControlServer, keys keystore.Store) (reflector.FullConfig, error) {
 	ports, err := config.ParsePortRange(c.TestPortRange)
 	if err != nil {
-		return server.Config{}, err
+		return reflector.FullConfig{}, err
 	}
-	out := server.Config{
+	out := reflector.FullConfig{
 		MaxConnections:           c.MaxConnections,
 		MaxSessionsPerConnection: c.MaxSessionsPerConnection,
 		MaxSessions:              c.MaxSessions,
 		ServWait:                 c.ServWait,
 		RefWait:                  c.RefWait,
 		PartialMessageTimeout:    c.PartialMessageTimeout,
-		TestPorts:                server.PortRange{Low: ports.First, High: ports.Last},
+		TestPorts:                reflector.PortRange{Low: ports.First, High: ports.Last},
 		IgnoreRequestedPort:      !c.HonorRequestedPort,
 		MaxPadding:               uint32(max(c.MaxPadding, 0)),  //nolint:gosec // G115: validated to 0-65507
 		Count:                    uint32(max(c.PBKDF2Count, 0)), //nolint:gosec // G115: validated to 1024-32768
@@ -147,12 +125,12 @@ func controlConfig(c config.ControlServer, keys keystore.Store) (server.Config, 
 	}
 	if keys != nil {
 		// A nil Store in the interface would read as a configured one.
-		out.Keys = keys
+		out.Credentials = keys
 	}
 	for _, s := range c.ACL {
 		p, err := config.ParsePrefix(s)
 		if err != nil {
-			return server.Config{}, fmt.Errorf("reflector.control.acl: %w", err)
+			return reflector.FullConfig{}, fmt.Errorf("reflector.control.acl: %w", err)
 		}
 		out.ACL = append(out.ACL, p)
 	}
@@ -214,10 +192,10 @@ func (r *reflectors) serve(ctx context.Context, wg *sync.WaitGroup, fail func(er
 			}
 		})
 	}
-	for _, ln := range r.controlLns {
+	if r.full != nil {
 		wg.Go(func() {
-			if err := r.control.Serve(ctx, ln); err != nil {
-				fail(fmt.Errorf("twamp-control %v: %w", ln.Addr(), err))
+			if err := r.full.Serve(ctx); err != nil {
+				fail(fmt.Errorf("twamp-control: %w", err))
 			}
 		})
 	}
@@ -233,8 +211,8 @@ func (r *reflectors) close() {
 	if r.light != nil {
 		_ = r.light.Close()
 	}
-	for _, ln := range r.controlLns {
-		_ = ln.Close()
+	if r.full != nil {
+		_ = r.full.Close()
 	}
 }
 
@@ -252,14 +230,10 @@ func (r *reflectors) lightAddrs() []netip.AddrPort {
 //
 //declscope:package // Daemon.ControlAddrs reports them
 func (r *reflectors) controlAddrs() []netip.AddrPort {
-	if r == nil {
+	if r == nil || r.full == nil {
 		return nil
 	}
-	out := make([]netip.AddrPort, len(r.controlLns))
-	for i, ln := range r.controlLns {
-		out[i] = ln.Addr().(*net.TCPAddr).AddrPort()
-	}
-	return out
+	return r.full.Addrs()
 }
 
 // timestamping returns the timestamping mode of the reflector's sockets,
@@ -326,16 +300,17 @@ func (r *reflectors) GetReflectorStatus(context.Context, *gotwampv1.GetReflector
 		resp.LightFlowsOverflow = st.FlowsOverflow
 		resp.Counters = append(resp.Counters, protoCounters(gotwampv1.ReflectorKind_REFLECTOR_KIND_LIGHT, st.Counters))
 	}
-	if r.control != nil {
-		for _, a := range r.controlAddrs() {
+	if r.full != nil {
+		fullStatus := r.full.Status()
+		for _, a := range fullStatus.Listeners {
 			resp.Listeners = append(resp.Listeners, &gotwampv1.ReflectorListener{Kind: gotwampv1.ReflectorKind_REFLECTOR_KIND_FULL, Address: a.String()})
 		}
-		st := r.control.Status()
+		st := fullStatus.Control
 		resp.ControlConnectionsActive = count32(st.ConnectionsActive)
 		resp.ControlConnectionsAccepted = st.ConnectionsAccepted
 		resp.ControlConnectionsRejected = st.ConnectionsRejected
 		resp.FullSessionsActive = count32(st.SessionsActive)
-		resp.Counters = append(resp.Counters, protoCounters(gotwampv1.ReflectorKind_REFLECTOR_KIND_FULL, r.full.Counters()))
+		resp.Counters = append(resp.Counters, protoCounters(gotwampv1.ReflectorKind_REFLECTOR_KIND_FULL, fullStatus.Counters))
 	}
 	return resp, nil
 }
@@ -376,8 +351,8 @@ func (r *reflectors) ListReflectorSessions(_ context.Context, req *gotwampv1.Lis
 		return resp, nil
 	}
 	kind := req.GetKind()
-	if r.control != nil && kind != gotwampv1.ReflectorKind_REFLECTOR_KIND_LIGHT {
-		for _, s := range r.control.Sessions() {
+	if r.full != nil && kind != gotwampv1.ReflectorKind_REFLECTOR_KIND_LIGHT {
+		for _, s := range r.full.Sessions() {
 			resp.FullSessions = append(resp.FullSessions, &gotwampv1.FullReflectorSession{
 				Sid:              s.SID[:],
 				ControlPeer:      protoEndpoint(s.ControlPeer),
@@ -450,17 +425,18 @@ func (r *reflectors) snapshot() prom.ReflectorSnapshot {
 		s.SessionsActive["light"] = st.FlowsActive
 		s.LightFlowsOverflow = st.FlowsOverflow
 	}
-	if r.control != nil {
-		c := r.full.Counters()
+	if r.full != nil {
+		fullStatus := r.full.Status()
+		c := fullStatus.Counters
 		// Full sessions have their own sockets; their counters are summed
 		// under the control listeners' addresses (B28).
-		addrs := make([]string, 0, len(r.controlLns))
-		for _, a := range r.controlAddrs() {
+		addrs := make([]string, 0, len(fullStatus.Listeners))
+		for _, a := range fullStatus.Listeners {
 			addrs = append(addrs, a.String())
 		}
 		s.Listeners = append(s.Listeners, prom.ReflectorListener{Kind: "full", Listener: strings.Join(addrs, ","), Received: c.Received, Reflected: c.Reflected})
 		drops("full", c)
-		st := r.control.Status()
+		st := fullStatus.Control
 		s.ControlConnectionsActive = st.ConnectionsActive
 		s.ControlConnections = map[string]uint64{"accepted": st.ConnectionsAccepted, "rejected": st.ConnectionsRejected}
 		s.SessionsActive["full"] = st.SessionsActive

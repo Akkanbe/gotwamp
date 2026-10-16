@@ -89,3 +89,7 @@ spelling the documents use and separates terms that are easy to confuse.
 | **security mode** | `unauthenticated`, `authenticated`, `encrypted`, `mixed` (A / E / M for the last three) | "authenticated modes" means A, E and M together |
 | **extension** | A TWAMP feature negotiated in the Modes field: Individual Session Control (ISC, RFC 5938), Reflect Octets and Symmetrical Size (RFC 6038) | |
 | **compatibility knob** | A setting that absorbs a difference between implementations, numbered `CMP-xx` (SPEC §11.2) | |
+
+## Embedding
+
+- [Go library API and capability boundaries](LIBRARY.md)

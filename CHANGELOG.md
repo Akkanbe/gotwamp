@@ -10,6 +10,8 @@ Work in progress toward the first release (v0.1.0).
 
 ### Added
 
+- **Go library**: curated `sender` and `reflector` APIs for embedded Full and Light measurement, canonical public result/security/error types, pure configuration validation, and a composed Full responder with joined shutdown ([library guide](docs/LIBRARY.md), ADR 0015). The daemon shares the same responder composition.
+
 - **Protocol**: the Unauthenticated mode of TWAMP (RFC 5357). TWAMP-Control Control-Client / Server, Session-Sender / Session-Reflector (Full), and the TWAMP Light sender / reflector (per-flow Reflector Sequence Number, ACL, rate limiting, DSCP reflection; ADR 0003). IPv4 / IPv6
 - **Measurement**: RTT, one-way delays (valid only when both ends are synchronized), IPDV / PDV / RFC 3550 jitter, loss (round-trip and estimated per direction), duplication, reordering, hop counts. Kernel transmit and receive timestamps (SO_TIMESTAMPING, T1' included) with a fallback to user space (ADR 0002), and the Error Estimate from adjtimex
 - **gotwampd**:
@@ -76,6 +78,9 @@ Work in progress toward the first release (v0.1.0).
 - Filling in the build information (version / commit / Go version) moved to `internal/buildinfo`, shared by gotwampd and the CLI. ULID generation is in `internal/ulid` alone.
 
 ### Fixed
+
+- **Library sender**: reconcile Full cancellation/control/Stop outcomes before final summary delivery; preserve completed continuous windows and canonicalize mapped IPv4 source addresses before family checks.
+- **ISC control client**: resume connection monitoring after session-state updates, preventing a normal disconnect after Stop-N-Ack from invalidating a stopped session.
 
 Found by the reviews from the maintenance and operations point of view (A: statistics and monitoring, B: daemon / CLI / configuration / distribution, C: protocol and data path).
 

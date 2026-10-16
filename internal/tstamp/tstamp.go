@@ -25,6 +25,8 @@ import (
 	"fmt"
 	"net/netip"
 	"time"
+
+	"github.com/Akkanbe/gotwamp"
 )
 
 // ErrUnsupported is returned when the requested timestamping mode, or the
@@ -33,43 +35,16 @@ import (
 //declscope:ignore overexported // callers match errors.ErrUnsupported, which it wraps; conn_other.go returns it
 var ErrUnsupported = fmt.Errorf("tstamp: %w", errors.ErrUnsupported)
 
-// Mode is a timestamping method.
-type Mode uint8
+// Mode is the public timestamping method.
+type Mode = gotwamp.Timestamping
 
+// Timestamping modes use the canonical public values.
 const (
-	// ModeAuto tries ModeKernel and falls back to ModeUserspace.
-	ModeAuto Mode = iota
-	// ModeKernel takes receive timestamps from the kernel (SO_TIMESTAMPING,
-	// or SO_TIMESTAMPNS when SO_TIMESTAMPING is refused).
-	ModeKernel
-	// ModeUserspace takes time.Now() right after recvmsg and right before
-	// sendmsg.
-	ModeUserspace
-	// ModeHardware takes receive timestamps, and transmit timestamps with
-	// Options.TxTimestamps, from the network card (SO_TIMESTAMPING with
-	// SOF_TIMESTAMPING_RX_HARDWARE / TX_HARDWARE / RAW_HARDWARE), and the
-	// kernel's software timestamps where the card gives none. It turns the
-	// card's timestamping on (SIOCSHWTSTAMP, which needs CAP_NET_ADMIN) when
-	// it is off, and falls back to ModeKernel when the card cannot
-	// timestamp every packet; HardwareReporter tells why.
-	ModeHardware
+	ModeAuto      = gotwamp.TimestampAuto
+	ModeKernel    = gotwamp.TimestampKernel
+	ModeUserspace = gotwamp.TimestampUserspace
+	ModeHardware  = gotwamp.TimestampHardware
 )
-
-// String returns the configuration name of the mode.
-func (m Mode) String() string {
-	switch m {
-	case ModeAuto:
-		return "auto"
-	case ModeKernel:
-		return "kernel"
-	case ModeUserspace:
-		return "userspace"
-	case ModeHardware:
-		return "hardware"
-	default:
-		return fmt.Sprintf("Mode(%d)", uint8(m))
-	}
-}
 
 // Options configures a Conn.
 type Options struct {

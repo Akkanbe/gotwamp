@@ -15,8 +15,6 @@ import (
 )
 
 const (
-	defaultTTL        = 255
-	defaultReadBuffer = 1 << 20
 	// rxOOBSize holds the TTL, TOS and SCM_TIMESTAMPING cmsgs.
 	rxOOBSize = 256
 )
@@ -80,27 +78,6 @@ func Listen(network string, local netip.AddrPort, opts Options) (Conn, error) {
 		return nil, err
 	}
 	return u, nil
-}
-
-func resolveOptions(opts Options) (ttl, rbuf int, err error) {
-	ttl, rbuf = opts.TTL, opts.ReadBuffer
-	if ttl == 0 {
-		ttl = defaultTTL
-	}
-	if rbuf == 0 {
-		rbuf = defaultReadBuffer
-	}
-	switch {
-	case ttl < 1 || ttl > 255:
-		return 0, 0, fmt.Errorf("tstamp: TTL %d out of range 1-255", opts.TTL)
-	case opts.TOS < 0 || opts.TOS > 255:
-		return 0, 0, fmt.Errorf("tstamp: TOS %d out of range 0-255", opts.TOS)
-	case rbuf < 0:
-		return 0, 0, fmt.Errorf("tstamp: negative read buffer %d", opts.ReadBuffer)
-	case opts.Mode > ModeHardware:
-		return 0, 0, fmt.Errorf("tstamp: unknown mode %v", opts.Mode)
-	}
-	return ttl, rbuf, nil
 }
 
 // setup applies the socket options and resolves the timestamping mode.
