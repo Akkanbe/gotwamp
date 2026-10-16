@@ -65,18 +65,16 @@ func startFull(t *testing.T, tp *topology, addrB netip.Addr) *fullPair {
 		}
 	})
 	p := &fullPair{tp: tp, server: netip.AddrPortFrom(addrB, 862)}
-	p.fc = sender.FullConfig{
+	p.fc = sender.WithFullListen(sender.WithFullDial(sender.FullConfig{
 		Server: p.server,
-		Dial: func(ctx context.Context, _ netip.Addr, s netip.AddrPort) (c net.Conn, err error) {
-			var d net.Dialer
-			tp.in(tp.a, func() { c, err = d.DialContext(ctx, "tcp", s.String()) })
-			return c, err
-		},
-		Listen: func(network string, local netip.AddrPort, opts tstamp.Options) (c tstamp.Conn, err error) {
-			tp.in(tp.a, func() { c, err = tstamp.Listen(network, local, opts) })
-			return c, err
-		},
-	}
+	}, func(ctx context.Context, _ netip.Addr, s netip.AddrPort) (c net.Conn, err error) {
+		var d net.Dialer
+		tp.in(tp.a, func() { c, err = d.DialContext(ctx, "tcp", s.String()) })
+		return c, err
+	}), func(network string, local netip.AddrPort, opts tstamp.Options) (c tstamp.Conn, err error) {
+		tp.in(tp.a, func() { c, err = tstamp.Listen(network, local, opts) })
+		return c, err
+	})
 	return p
 }
 

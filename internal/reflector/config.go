@@ -46,8 +46,6 @@ var DefaultListeners = []netip.AddrPort{
 type Sequence uint8
 
 // Sequence values.
-//
-//declscope:ignore overexported // SequencePerFlow is the zero value, named for a configuration that says so; gotwampd leaves it unset
 const (
 	// SequencePerFlow counts from 0 per flow, the default.
 	SequencePerFlow Sequence = iota
@@ -60,8 +58,6 @@ const (
 type DSCPPolicy uint8
 
 // DSCPPolicy values.
-//
-//declscope:ignore overexported // DSCPCopy is the zero value, named for a configuration that says so; gotwampd leaves it unset
 const (
 	// DSCPCopy copies the DSCP of each received packet, the default.
 	DSCPCopy DSCPPolicy = iota
@@ -145,6 +141,7 @@ func (c Config) WithDefaults() Config {
 // Validate checks a configuration that already has its defaults.
 func (c Config) Validate() error {
 	var errs []error
+	errs = append(errs, (tstamp.Options{Mode: c.Timestamping, ReadBuffer: c.ReadBuffer}).Validate())
 	seen := make(map[netip.AddrPort]bool, len(c.Listeners))
 	for _, l := range c.Listeners {
 		if !l.IsValid() {

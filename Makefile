@@ -43,8 +43,12 @@ build: ## Build all packages and the binaries into bin/
 	$(foreach c,$(COMMANDS),CGO_ENABLED=0 $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $(BIN_DIR)/$(c) ./cmd/$(c) &&) true
 
 .PHONY: test
-test: ## Run the tests with the race detector
+test: test-library ## Run the tests with the race detector
 	CGO_ENABLED=1 $(GO) test $(RACE) ./...
+
+.PHONY: test-library
+test-library: ## Test embedding from an independent Go module
+	cd test/library && CGO_ENABLED=1 $(GO) test $(RACE) ./...
 
 # Soak test (test/soak): SOAK_SESSIONS sessions at SOAK_PPS packets per second
 # for SOAK_DURATION. The 24-hour M5 run: make soak SOAK_SESSIONS=100 SOAK_DURATION=24h
@@ -75,7 +79,7 @@ interop: ## Run the perfSONAR interop tests in Docker (INTEROP_CLI=1: also the C
 	exit $$rc
 
 .PHONY: cover
-cover: ## Run the tests with coverage and print the per-function summary
+cover: test-library ## Run the tests with coverage and print the per-function summary
 	CGO_ENABLED=1 $(GO) test $(RACE) -coverprofile=coverage.out ./...
 	$(GO) tool cover -func=coverage.out | tail -n 1
 

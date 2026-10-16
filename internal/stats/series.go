@@ -6,36 +6,12 @@ import (
 	"math"
 	"slices"
 	"time"
+
+	"github.com/Akkanbe/gotwamp"
 )
 
-// Distribution summarizes one delay metric over a run or window (SPEC §7.5).
-// When Count is zero every other field is zero and undefined.
-type Distribution struct {
-	// Count is the number of values observed.
-	Count uint64
-	// Samples is the number of values the percentiles were computed from.
-	// It is less than Count when the series was decimated.
-	Samples int
-	// Min is the smallest value observed.
-	Min time.Duration
-	// Max is the largest value observed.
-	Max time.Duration
-	// Mean is the arithmetic mean of all values observed.
-	Mean time.Duration
-	// StdDev is the sample standard deviation of all values observed. It is
-	// zero when Count is one.
-	StdDev time.Duration
-	// Median is the 50th percentile.
-	Median time.Duration
-	// P90 is the 90th percentile.
-	P90 time.Duration
-	// P95 is the 95th percentile.
-	P95 time.Duration
-	// P99 is the 99th percentile.
-	P99 time.Duration
-	// P999 is the 99.9th percentile.
-	P999 time.Duration
-}
+// Distribution is the canonical public value.
+type Distribution = gotwamp.Distribution
 
 // series accumulates one metric: exact moments and extremes over every value,
 // and an equally spaced subset of at most limit values for the percentiles.
@@ -142,7 +118,7 @@ func percentile(sorted []time.Duration, p float64) time.Duration {
 // shift returns d with every location statistic reduced by base. It turns
 // the RTT distribution into PDV, rtt − min(rtt) (RFC 5481 §4.2); the spread
 // is unchanged.
-func (d Distribution) shift(base time.Duration) Distribution {
+func shift(d Distribution, base time.Duration) Distribution {
 	if d.Count == 0 {
 		return d
 	}

@@ -16,6 +16,7 @@ import (
 	"io"
 	mrand "math/rand/v2"
 	"net/netip"
+	"sync"
 	"time"
 
 	"github.com/Akkanbe/gotwamp/internal/stats"
@@ -277,8 +278,10 @@ type Sender struct {
 	ownConn bool
 	// packet is the Session-Sender packet; its padding is filled once and
 	// the header is rewritten for every send.
-	packet []byte
-	used   bool
+	packet    []byte
+	used      bool
+	closeOnce sync.Once
+	closeErr  error
 }
 
 // New validates cfg and opens the socket, unless one is given with
@@ -362,15 +365,28 @@ func (s *Sender) finishPadding(hdr int) {
 	}
 }
 
-// normalize applies the defaults to cfg and validates it.
-func normalize(cfg *Config, full bool) error {
-	if !cfg.Target.IsValid() || cfg.Target.Port() == 0 {
-		return errors.New("sender: target address and port are required")
+// WithDefaults returns a normalized Light configuration. Validate reports any
+// invalid fields; this method performs no I/O.
+func (cfg Config) WithDefaults() Config {
+	// Defaults are independent of endpoint validation.
+	applyDefaults(&cfg)
+	return cfg
+}
+
+// Validate checks a Light configuration without opening a socket.
+func (cfg Config) Validate() error { return normalize(&cfg, false) }
+
+// RunLight opens a sender, runs it once, and releases its socket.
+func RunLight(ctx context.Context, cfg Config, opts ...Option) (Summary, error) {
+	s, err := New(cfg, opts...)
+	if err != nil {
+		return Summary{}, err
 	}
-	cfg.Target = netip.AddrPortFrom(cfg.Target.Addr().Unmap(), cfg.Target.Port())
-	if cfg.Source.IsValid() && cfg.Source.Addr().Is4() != cfg.Target.Addr().Is4() {
-		return fmt.Errorf("sender: source %v and target %v differ in address family", cfg.Source, cfg.Target)
-	}
+	summary, runErr := s.Run(ctx)
+	return summary, errors.Join(runErr, s.Close())
+}
+
+func applyDefaults(cfg *Config) {
 	if cfg.Interval <= 0 {
 		cfg.Interval = defaultInterval
 	}
@@ -386,6 +402,18 @@ func normalize(cfg *Config, full bool) error {
 	if cfg.TTL == 0 {
 		cfg.TTL = 255
 	}
+}
+
+// normalize applies the defaults to cfg and validates it.
+func normalize(cfg *Config, full bool) error {
+	if !cfg.Target.IsValid() || cfg.Target.Port() == 0 {
+		return errors.New("sender: target address and port are required")
+	}
+	cfg.Target = netip.AddrPortFrom(cfg.Target.Addr().Unmap(), cfg.Target.Port())
+	if cfg.Source.IsValid() && cfg.Source.Addr().Is4() != cfg.Target.Addr().Is4() {
+		return fmt.Errorf("sender: source %v and target %v differ in address family", cfg.Source, cfg.Target)
+	}
+	applyDefaults(cfg)
 	if full {
 		cfg.StatelessReflector = false
 	}
@@ -407,7 +435,13 @@ func normalize(cfg *Config, full bool) error {
 	case cfg.PaddingFill > PaddingZero:
 		return fmt.Errorf("sender: unknown padding fill %d", cfg.PaddingFill)
 	}
-	return nil
+	if cfg.UserspaceError < 0 || cfg.KernelError < 0 || cfg.HardwareError < 0 || cfg.MethodError < 0 {
+		return errors.New("sender: timestamping error must not be negative")
+	}
+	if cfg.MaxSamples < 0 {
+		return errors.New("sender: max samples must not be negative")
+	}
+	return (tstamp.Options{TTL: cfg.TTL, TOS: cfg.DSCP << 2, Mode: cfg.Timestamping, ReadBuffer: cfg.ReadBuffer}).Validate()
 }
 
 // Run sends the packets and collects their replies, until every packet of a
@@ -435,8 +469,6 @@ func (s *Sender) Run(ctx context.Context) (Summary, error) {
 }
 
 // LocalAddr returns the address and port the Sender sends from.
-//
-//declscope:ignore overexported // a caller letting New bind the socket learns its port here before Run
 func (s *Sender) LocalAddr() netip.AddrPort {
 	return s.conn.LocalAddr()
 }
@@ -444,11 +476,12 @@ func (s *Sender) LocalAddr() netip.AddrPort {
 // Close closes the socket the Sender opened. A socket given with WithConn
 // is left open.
 func (s *Sender) Close() error {
-	if !s.ownConn {
-		return nil
-	}
-	if err := s.conn.Close(); err != nil {
-		return fmt.Errorf("sender: close: %w", err)
-	}
-	return nil
+	s.closeOnce.Do(func() {
+		if s.ownConn {
+			if err := s.conn.Close(); err != nil {
+				s.closeErr = fmt.Errorf("sender: close: %w", err)
+			}
+		}
+	})
+	return s.closeErr
 }

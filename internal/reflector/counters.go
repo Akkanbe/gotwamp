@@ -8,8 +8,6 @@ import "sync/atomic"
 type DropReason uint8
 
 // Drop reasons, in the order of the gRPC enum.
-//
-//declscope:ignore overexported // daemon reaches them through DropReasons; the tests name each one
 const (
 	DropACL            DropReason = iota // source not allowed by the ACL (Light)
 	DropMalformed                        // too short or too long, or failed its HMAC (Full)

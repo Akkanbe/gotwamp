@@ -10,6 +10,8 @@ package stats
 import (
 	"math"
 	"time"
+
+	"github.com/Akkanbe/gotwamp"
 )
 
 const (
@@ -46,50 +48,26 @@ type Config struct {
 	SendDSCP uint8
 }
 
-// Kind classifies a reply passed to [Accumulator.Add].
-type Kind int
+// Kind is the canonical public value.
+type Kind = gotwamp.Kind
 
-const (
-	// KindAccepted is the first reply for its Sender Sequence Number.
-	KindAccepted Kind = iota
-	// KindDupForward is an extra reply with a new Reflector Sequence Number.
-	KindDupForward
-	// KindDupReverse is an extra reply repeating both sequence numbers.
-	KindDupReverse
-	// KindLate arrived after T1 + timeout. Its packet is counted as lost.
-	KindLate
-	// KindStray matched no outstanding packet.
-	KindStray
-)
+// Result is the canonical public value.
+type Result = gotwamp.Result
 
-// String returns the snake_case name of k.
-func (k Kind) String() string {
-	switch k {
-	case KindAccepted:
-		return "accepted"
-	case KindDupForward:
-		return "duplicate_forward"
-	case KindDupReverse:
-		return "duplicate_reverse"
-	case KindLate:
-		return "late"
-	case KindStray:
-		return "stray"
-	default:
-		return "unknown"
-	}
-}
+// KindAccepted is the canonical public constant.
+const KindAccepted = gotwamp.KindAccepted
 
-// Result describes one reply passed to [Accumulator.Add].
-type Result struct {
-	// Kind classifies the reply. Only KindAccepted contributes delays.
-	Kind Kind
-	// Metrics are the reply's per-packet indicators, whatever its Kind.
-	Metrics Metrics
-	// Reordered reports whether an accepted reply arrived after a reply with
-	// a larger Sender Sequence Number (RFC 4737 §3.3).
-	Reordered bool
-}
+// KindDupForward is the canonical public constant.
+const KindDupForward = gotwamp.KindDupForward
+
+// KindDupReverse is the canonical public constant.
+const KindDupReverse = gotwamp.KindDupReverse
+
+// KindLate is the canonical public constant.
+const KindLate = gotwamp.KindLate
+
+// KindStray is the canonical public constant.
+const KindStray = gotwamp.KindStray
 
 // Accumulator turns a stream of sends and replies into a [Summary]. Events
 // must be reported in time order: every reply with T4 ≤ now must be added
@@ -516,7 +494,7 @@ func (a *Accumulator) Summary() Summary {
 		IPDVRTT:     rtt.distribution(),
 		IPDVForward: forward.distribution(),
 		IPDVReverse: reverse.distribution(),
-		PDV:         s.RTT.shift(s.RTT.Min),
+		PDV:         shift(s.RTT, s.RTT.Min),
 		RFC3550:     time.Duration(math.Round(a.jitter)),
 	}
 	if s.RTT.Count > 0 {

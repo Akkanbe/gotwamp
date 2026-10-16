@@ -470,7 +470,11 @@ func (c *conn) abandon() {
 		}
 		c.s.mu.Lock()
 		if !ss.released {
-			ss.timer = time.AfterFunc(ss.drainUntil.Sub(now), func() { c.s.release(ss) })
+			c.s.drainTimers.Add(1)
+			ss.timer = time.AfterFunc(ss.drainUntil.Sub(now), func() {
+				defer c.s.drainTimers.Done()
+				c.s.release(ss)
+			})
 		}
 		c.s.mu.Unlock()
 	}

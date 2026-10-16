@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Akkanbe/gotwamp"
 	"github.com/Akkanbe/gotwamp/internal/control/server"
 	"github.com/Akkanbe/gotwamp/internal/tstamp"
 	"github.com/Akkanbe/gotwamp/internal/twamp/errest"
@@ -32,9 +33,39 @@ const (
 	VerifyNone
 )
 
-// FullConfig configures the Full Session-Reflector. Zero values take the
-// defaults of Config.
+// FullConfig configures a TWAMP Full reflector and its control server.
+// Zero values take the documented defaults.
 type FullConfig struct {
+	// Listeners are the TCP control addresses; empty uses [::]:862 and 0.0.0.0:862.
+	Listeners []netip.AddrPort
+	// ACL permits control clients from these prefixes; empty allows all.
+	ACL []netip.Prefix
+	// MaxConnections caps control connections; zero means 64.
+	MaxConnections int
+	// MaxSessionsPerConnection caps sessions per connection; zero means 16.
+	MaxSessionsPerConnection int
+	// MaxSessions caps sessions across the service; zero means 1024.
+	MaxSessions int
+	// ServWait bounds idle control connections; zero means 900 seconds.
+	ServWait time.Duration
+	// RefWait releases active sessions without packets; zero means 900 seconds.
+	RefWait time.Duration
+	// PartialMessageTimeout bounds partial control reads and writes; zero means 60 seconds.
+	PartialMessageTimeout time.Duration
+	// TestPorts supplies alternate UDP ports; zero means 20000-29999 inclusive.
+	TestPorts PortRange
+	// IgnoreRequestedPort always allocates a port from TestPorts.
+	IgnoreRequestedPort bool
+	// MaxPadding bounds requested padding; zero means 9000 octets.
+	MaxPadding uint32
+	// Count is the greeting PBKDF2 iteration count; zero means 2048.
+	Count uint32
+	// Modes are the offered security and feature bits; zero means unauthenticated.
+	Modes gotwamp.Modes
+	// Credentials supplies passphrases when offering authenticated, encrypted or mixed mode.
+	// Implementations must support concurrent lookups while the service is running.
+	Credentials gotwamp.CredentialStore
+
 	// VerifySender selects the source check.
 	VerifySender VerifySender
 	// TTL is the TTL or Hop Limit of replies (1–255).
@@ -62,6 +93,14 @@ type FullConfig struct {
 
 // WithDefaults returns c with zero values replaced by the defaults.
 func (c FullConfig) WithDefaults() FullConfig {
+	if len(c.Listeners) == 0 {
+		c.Listeners = []netip.AddrPort{netip.MustParseAddrPort("[::]:862"), netip.MustParseAddrPort("0.0.0.0:862")}
+	}
+	sc := c.controlConfig().WithDefaults()
+	c.MaxConnections, c.MaxSessionsPerConnection, c.MaxSessions = sc.MaxConnections, sc.MaxSessionsPerConnection, sc.MaxSessions
+	c.ServWait, c.RefWait, c.PartialMessageTimeout = sc.ServWait, sc.RefWait, sc.PartialMessageTimeout
+	c.TestPorts, c.MaxPadding, c.Count, c.Modes = sc.TestPorts, sc.MaxPadding, sc.Count, sc.Modes
+
 	if c.TTL == 0 {
 		c.TTL = defaultTTL
 	}
@@ -80,6 +119,18 @@ func (c FullConfig) WithDefaults() FullConfig {
 // Validate checks a configuration that already has its defaults.
 func (c FullConfig) Validate() error {
 	var errs []error
+	errs = append(errs, c.controlConfig().Validate())
+	errs = append(errs, (tstamp.Options{Mode: c.Timestamping, ReadBuffer: c.ReadBuffer}).Validate())
+	seen := make(map[netip.AddrPort]bool, len(c.Listeners))
+	for _, addr := range c.Listeners {
+		if !addr.IsValid() {
+			errs = append(errs, fmt.Errorf("listener %v is not an address and port", addr))
+		}
+		if seen[addr] {
+			errs = append(errs, fmt.Errorf("listener %v is listed twice", addr))
+		}
+		seen[addr] = true
+	}
 	if c.VerifySender > VerifyNone {
 		errs = append(errs, fmt.Errorf("unknown verify_sender %d", c.VerifySender))
 	}

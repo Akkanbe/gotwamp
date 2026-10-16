@@ -110,13 +110,13 @@ func (r *runner) runFull(ctx context.Context, p *testPlan, cfg sender.Config, ad
 		cfg.Source = netip.AddrPortFrom(p.source, 0)
 	}
 	var local netip.AddrPort
-	fc.Listen = func(network string, l netip.AddrPort, o tstamp.Options) (tstamp.Conn, error) {
+	fc = sender.WithFullListen(fc, func(network string, l netip.AddrPort, o tstamp.Options) (tstamp.Conn, error) {
 		c, err := r.open.listen(network, l, o)
 		if err == nil {
 			local = c.LocalAddr()
 		}
 		return c, err
-	}
+	})
 	begin := time.Now()
 	name := ""
 	if session != nil {

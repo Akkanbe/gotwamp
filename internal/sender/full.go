@@ -72,11 +72,7 @@ type FullConfig struct {
 	// EndDelay is the wait between the end of the run and Stop-Sessions
 	// (CMP-18).
 	EndDelay time.Duration
-	// Dial opens the control connection from local (invalid: any address);
-	// nil dials TCP with keepalive and ControlDSCP.
-	Dial func(ctx context.Context, local netip.Addr, server netip.AddrPort) (net.Conn, error)
-	// Listen opens the Sender socket; nil means tstamp.Listen.
-	Listen func(network string, local netip.AddrPort, opts tstamp.Options) (tstamp.Conn, error)
+	deps     fullDeps
 	// Accepted, when set, is called once the server has accepted the
 	// session, before Start-Sessions, with its SID and the reflector address
 	// and port the test packets go to.
@@ -104,8 +100,29 @@ type FullConfig struct {
 	PaddingToReflect uint16
 }
 
-// withDefaults returns fc with zero values replaced by the defaults.
-func (fc FullConfig) withDefaults() FullConfig {
+// fullDeps contains private transport injection for the daemon and tests.
+type fullDeps struct {
+	// Dial opens the control connection from local (invalid: any address);
+	// nil dials TCP with keepalive and ControlDSCP.
+	Dial func(ctx context.Context, local netip.Addr, server netip.AddrPort) (net.Conn, error)
+	// Listen opens the Sender socket; nil means tstamp.Listen.
+	Listen func(network string, local netip.AddrPort, opts tstamp.Options) (tstamp.Conn, error)
+}
+
+// WithFullDial injects the control dialer for internal consumers.
+func WithFullDial(fc FullConfig, dial func(context.Context, netip.Addr, netip.AddrPort) (net.Conn, error)) FullConfig {
+	fc.deps.Dial = dial
+	return fc
+}
+
+// WithFullListen injects the UDP listener for internal consumers.
+func WithFullListen(fc FullConfig, listen func(string, netip.AddrPort, tstamp.Options) (tstamp.Conn, error)) FullConfig {
+	fc.deps.Listen = listen
+	return fc
+}
+
+// WithDefaults returns fc with zero values replaced by the defaults.
+func (fc FullConfig) WithDefaults() FullConfig {
 	if fc.Server.Port() == 0 {
 		fc.Server = netip.AddrPortFrom(fc.Server.Addr(), defaultControlPort)
 	}
@@ -116,13 +133,15 @@ func (fc FullConfig) withDefaults() FullConfig {
 	if fc.SenderPorts == (PortRange{}) {
 		fc.SenderPorts = defaultSenderPorts
 	}
-	if fc.Listen == nil {
-		fc.Listen = tstamp.Listen
+	if fc.deps.Listen == nil {
+		fc.deps.Listen = tstamp.Listen
 	}
 	return fc
 }
 
-func (fc FullConfig) validate() error {
+// Validate checks the control configuration without opening a connection.
+func (fc FullConfig) Validate() error {
+	fc = fc.WithDefaults()
 	switch {
 	case !fc.Server.Addr().IsValid():
 		return errors.New("sender: control server address is required")
@@ -133,7 +152,18 @@ func (fc FullConfig) validate() error {
 	case fc.EndDelay < 0:
 		return fmt.Errorf("sender: end delay %v is negative", fc.EndDelay)
 	}
-	return nil
+	return (client.Config{Modes: fc.Modes, KeyID: fc.KeyID, Passphrase: fc.Passphrase, Features: fc.Features}).Validate()
+}
+
+// ValidateFull checks both configurations, including security and socket options,
+// without dialing or binding. Target is negotiated and is ignored.
+func ValidateFull(cfg Config, fc FullConfig) error {
+	fc = fc.WithDefaults()
+	if err := fc.Validate(); err != nil {
+		return err
+	}
+	cfg.Target = fc.Server
+	return normalize(&cfg, true)
 }
 
 // RunFull carries out one TWAMP Full run on its own control connection
@@ -148,8 +178,8 @@ func (fc FullConfig) validate() error {
 // the control connection is lost during the run, the summary comes with an
 // error matching client.ErrControlLost.
 func RunFull(ctx context.Context, cfg Config, fc FullConfig, opts ...Option) (Summary, error) {
-	fc = fc.withDefaults()
-	if err := fc.validate(); err != nil {
+	fc = fc.WithDefaults()
+	if err := fc.Validate(); err != nil {
 		return Summary{}, err
 	}
 	check := cfg
@@ -157,7 +187,7 @@ func RunFull(ctx context.Context, cfg Config, fc FullConfig, opts ...Option) (Su
 	if err := normalize(&check, true); err != nil {
 		return Summary{}, err
 	}
-	cfg.Timeout = check.Timeout
+	cfg = check
 
 	tcp, err := fc.dial(ctx, cfg.Source.Addr())
 	if err != nil {
@@ -287,8 +317,8 @@ func stop(ctx context.Context, c *client.Client, sess *client.Session, accept wi
 func (fc FullConfig) dial(ctx context.Context, local netip.Addr) (net.Conn, error) {
 	ctx, cancel := context.WithTimeout(ctx, fc.ControlTimeout)
 	defer cancel()
-	if fc.Dial != nil {
-		return fc.Dial(ctx, local, fc.Server)
+	if fc.deps.Dial != nil {
+		return fc.deps.Dial(ctx, local, fc.Server)
 	}
 	d := net.Dialer{
 		KeepAliveConfig: net.KeepAliveConfig{Enable: true, Idle: keepAliveIdle, Interval: keepAliveInterval, Count: keepAliveCount},
@@ -317,7 +347,7 @@ func (fc FullConfig) bindSender(local netip.Addr, cfg Config) (tstamp.Conn, erro
 		TxTimestamps: cfg.Timestamping != tstamp.ModeUserspace, // T1' (SPEC §8.2)
 	}
 	if fc.SenderPort != 0 {
-		conn, err := fc.Listen(network, netip.AddrPortFrom(local, fc.SenderPort), opts)
+		conn, err := fc.deps.Listen(network, netip.AddrPortFrom(local, fc.SenderPort), opts)
 		if err != nil {
 			return nil, fmt.Errorf("sender: bind sender port %d: %w", fc.SenderPort, err)
 		}
@@ -330,7 +360,7 @@ func (fc FullConfig) bindSender(local netip.Addr, cfg Config) (tstamp.Conn, erro
 	for i := range size {
 		port := uint16(int(r.Low) + (start+i)%size) //nolint:gosec // within r by construction
 		var conn tstamp.Conn
-		if conn, err = fc.Listen(network, netip.AddrPortFrom(local, port), opts); err == nil {
+		if conn, err = fc.deps.Listen(network, netip.AddrPortFrom(local, port), opts); err == nil {
 			return conn, nil
 		}
 		if !errors.Is(err, syscall.EADDRINUSE) && !errors.Is(err, syscall.EACCES) {

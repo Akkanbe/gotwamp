@@ -32,6 +32,11 @@ const (
 
 // Deps are the collaborators of the Light reflector.
 type Deps struct {
+	// ListenControl opens a TCP control listener; nil uses ListenControl.
+	ListenControl func(network string, local netip.AddrPort) (net.Listener, error)
+	// ControlLogger receives control server messages; nil uses Logger.
+	ControlLogger *slog.Logger
+
 	// Listen opens a UDP socket; nil means tstamp.Listen.
 	Listen func(network string, local netip.AddrPort, opts tstamp.Options) (tstamp.Conn, error)
 	// Clock reports the clock state for the Error Estimate; nil sends
@@ -80,9 +85,7 @@ type Light struct {
 	acl       []netip.Prefix
 	hook      Hook
 
-	serveOnce sync.Once
-	closeOnce sync.Once
-	closeErr  error
+	life serviceLife
 }
 
 // listener is one bound socket and its counters.
@@ -158,40 +161,41 @@ func (l *Light) Addrs() []netip.AddrPort {
 	return out
 }
 
-// Serve reflects packets until ctx is done, then closes the listeners and
-// returns. It may be called once.
+// Serve reflects packets until ctx is done or Close is called. It may be
+// called once; after Close it returns an error without starting workers.
 func (l *Light) Serve(ctx context.Context) error {
-	started := false
-	l.serveOnce.Do(func() { started = true })
-	if !started {
-		return errors.New("light reflector: Serve called twice")
+	ctx, finish, err := l.life.begin(ctx)
+	if err != nil {
+		return fmt.Errorf("light reflector: %w", err)
 	}
+	defer finish()
 	var wg sync.WaitGroup
 	for _, ln := range l.listeners {
 		wg.Go(func() { l.serveListener(ln) })
 	}
-	sweepCtx, stopSweep := context.WithCancel(context.Background())
-	wg.Go(func() { l.sweep(sweepCtx) })
-
+	wg.Go(func() { l.sweep(ctx) })
 	<-ctx.Done()
-	stopSweep()
-	err := l.Close()
+	err = l.life.shutdown(l.closeSockets)
 	wg.Wait()
 	return err
 }
 
-// Close closes every listener. Serve calls it when ctx is done.
+// Close closes every listener and waits for all serving workers to stop.
+// It is safe before Serve and may be called concurrently or repeatedly.
 func (l *Light) Close() error {
-	l.closeOnce.Do(func() {
-		var errs []error
-		for _, ln := range l.listeners {
-			if err := ln.conn.Close(); err != nil {
-				errs = append(errs, fmt.Errorf("light reflector: close %v: %w", ln.addr, err))
-			}
+	err := l.life.shutdown(l.closeSockets)
+	l.life.wait()
+	return err
+}
+
+func (l *Light) closeSockets() error {
+	var errs []error
+	for _, ln := range l.listeners {
+		if err := ln.conn.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			errs = append(errs, fmt.Errorf("light reflector: close %v: %w", ln.addr, err))
 		}
-		l.closeErr = errors.Join(errs...)
-	})
-	return l.closeErr
+	}
+	return errors.Join(errs...)
 }
 
 // Status returns the counters and flow counts.
