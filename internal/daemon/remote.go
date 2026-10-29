@@ -34,7 +34,7 @@ const maxAcceptDelay = time.Second
 // a client certificate signed by the configured CA and, when listed, one
 // of the allowed names (ADR 0010).
 //
-//declscope:package // Start serves the API on it
+//declscope:shared // Start serves the API on it
 func listenRemote(t config.APITCP, log *slog.Logger) (net.Listener, error) {
 	cfg, err := remoteTLS(t)
 	if err != nil {

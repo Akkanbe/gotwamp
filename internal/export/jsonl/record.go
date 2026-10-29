@@ -178,7 +178,7 @@ type errorRecord struct {
 
 // encode returns the record of e followed by a newline.
 //
-//declscope:package // the writer goroutine encodes every record here
+//declscope:shared // the writer goroutine encodes every record here
 func encode(e store.Event, loc *time.Location) ([]byte, error) {
 	h := header{Type: e.Kind.String(), Time: stamp(e.Time, loc), Session: e.Session.Name, RunID: e.RunID}
 	var v any

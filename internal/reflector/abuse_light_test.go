@@ -16,7 +16,7 @@ import (
 
 // abuseMaxPacket is the max_packet_size of the reflector fuzz targets.
 //
-//declscope:package // shared by the Light and Full fuzz targets
+//declscope:shared // shared by the Light and Full fuzz targets
 const abuseMaxPacket = 2000
 
 // checkReply checks a reflector's answer to payload against the invariants
@@ -24,7 +24,7 @@ const abuseMaxPacket = 2000
 // otherwise one reply of exactly max(n, header) octets, so never more than
 // that (the amplification bound), echoing the sender's fields.
 //
-//declscope:package // the Full reflector fuzz checks its replies the same way
+//declscope:shared // the Full reflector fuzz checks its replies the same way
 func checkReply(t *testing.T, payload []byte, out []txPacket, header int) {
 	t.Helper()
 	n := min(len(payload), abuseMaxPacket+1) // the socket truncates to the buffer

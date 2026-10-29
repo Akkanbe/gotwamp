@@ -15,7 +15,7 @@ import (
 
 // newStatsCommand returns "gotwamp stats NAME".
 //
-//declscope:package // a subcommand of the root
+//declscope:shared // a subcommand of the root
 func newStatsCommand(g *globals) *cobra.Command {
 	var (
 		last  uint32
@@ -66,7 +66,7 @@ func newStatsCommand(g *globals) *cobra.Command {
 
 // newWatchCommand returns "gotwamp watch [NAME ...]".
 //
-//declscope:package // a subcommand of the root
+//declscope:shared // a subcommand of the root
 func newWatchCommand(g *globals) *cobra.Command {
 	var packets bool
 	cmd := &cobra.Command{

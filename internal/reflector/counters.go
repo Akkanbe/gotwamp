@@ -8,8 +8,6 @@ import "sync/atomic"
 type DropReason uint8
 
 // Drop reasons, in the order of the gRPC enum.
-//
-//declscope:ignore overexported // daemon reaches them through DropReasons; the tests name each one
 const (
 	DropACL            DropReason = iota // source not allowed by the ACL (Light)
 	DropMalformed                        // too short or too long, or failed its HMAC (Full)
@@ -56,7 +54,7 @@ type Counters struct {
 
 // add accumulates o into c.
 //
-//declscope:package // Light.Status sums its listeners
+//declscope:shared // Light.Status sums its listeners
 func (c *Counters) add(o Counters) {
 	c.Received += o.Received
 	c.Reflected += o.Reflected
@@ -68,7 +66,7 @@ func (c *Counters) add(o Counters) {
 
 // counters is the live, atomically updated form of Counters.
 //
-//declscope:package // updated by every listener of light.go
+//declscope:shared // updated by every listener of light.go
 type counters struct {
 	received   atomic.Uint64
 	reflected  atomic.Uint64
@@ -78,7 +76,7 @@ type counters struct {
 
 // snapshot reads the counters. Each field is read atomically; the set is not.
 //
-//declscope:package // read by Light.Status
+//declscope:shared // read by Light.Status
 func (c *counters) snapshot() Counters {
 	s := Counters{
 		Received:   c.received.Load(),

@@ -53,8 +53,6 @@ type Schedule struct {
 type Source uint8
 
 // The values of Source.
-//
-//declscope:ignore overexported // an enum: SourceConfig is the zero value the daemon's config sessions leave
 const (
 	// SourceConfig is a session of the configuration file. Update manages
 	// these.
@@ -134,8 +132,6 @@ func (e *StageError) Unwrap() error { return e.Err }
 type State uint8
 
 // The values of State.
-//
-//declscope:ignore overexported // an enum: StateRunning is the zero value of a new session
 const (
 	// StateRunning sessions start runs on their schedule.
 	StateRunning State = iota

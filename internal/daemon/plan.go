@@ -26,7 +26,7 @@ const defaultLightPort = 862
 // carry out one run. It is comparable with reflect.DeepEqual, so that the
 // scheduler can tell a changed session from an unchanged one.
 //
-//declscope:package // built here, carried out by the runner (runner.go)
+//declscope:shared // built here, carried out by the runner (runner.go)
 type testPlan struct {
 	// host, ipv and source select the target as configured; addr, when
 	// valid, is the target already resolved (ad-hoc tests).
@@ -52,7 +52,7 @@ type testPlan struct {
 // sessionOptions are the schedule.SessionSpec Options of a monitoring
 // session: its plan, and its definition for GetSession and ListSessions.
 //
-//declscope:package // the runner and the sender service read it back from the scheduler
+//declscope:shared // the runner and the sender service read it back from the scheduler
 type sessionOptions struct {
 	plan testPlan
 	def  config.Session
@@ -62,7 +62,7 @@ type sessionOptions struct {
 // and the sender's keys. A Full test's security mode takes its key from
 // keys; TWAMP Light is unauthenticated only and ignores the mode.
 //
-//declscope:package // RunTest plans ad-hoc tests with it
+//declscope:shared // RunTest plans ad-hoc tests with it
 func newPlan(target, ipv, source string, p config.TestParams, d config.Daemon, keys keystore.Store) (testPlan, error) {
 	var secret testSecret
 	if p.Mode == "full" {
@@ -150,7 +150,7 @@ func newPlan(target, ipv, source string, p config.TestParams, d config.Daemon, k
 // sessionSpec turns a validated monitoring session into the scheduler's
 // definition.
 //
-//declscope:package // the sender service and reload build sessions with it
+//declscope:shared // the sender service and reload build sessions with it
 func sessionSpec(s config.Session, d config.Daemon, keys keystore.Store) (schedule.SessionSpec, error) {
 	plan, err := newPlan(s.Target, s.IPV, s.Source, s.TestParams, d, keys)
 	if err != nil {
@@ -186,7 +186,7 @@ func sessionSpec(s config.Session, d config.Daemon, keys keystore.Store) (schedu
 
 // configSessions returns the scheduler definitions of the sessions of cfg.
 //
-//declscope:package // Start and reload hand them to the scheduler
+//declscope:shared // Start and reload hand them to the scheduler
 func configSessions(cfg *config.Config, keys keystore.Store) ([]schedule.SessionSpec, error) {
 	specs := make([]schedule.SessionSpec, 0, len(cfg.Sender.Sessions))
 	for _, s := range cfg.Sender.Sessions {
@@ -202,7 +202,7 @@ func configSessions(cfg *config.Config, keys keystore.Store) ([]schedule.Session
 // overlayTest applies the fields a request sets onto p, which holds the
 // defaults. Unset fields keep them (ADR 0005).
 //
-//declscope:package // RunTest and the session RPCs read requests with it
+//declscope:shared // RunTest and the session RPCs read requests with it
 func overlayTest(p *config.TestParams, s *gotwampv1.TestSpec) error {
 	switch s.GetMode() {
 	case gotwampv1.Mode_MODE_FULL:
@@ -306,7 +306,7 @@ var extensionNames = map[gotwampv1.Extension]string{
 
 // extensionName converts an extension of the API.
 //
-//declscope:package // requests check the extensions they name with it
+//declscope:shared // requests check the extensions they name with it
 func extensionName(e gotwampv1.Extension) (string, bool) {
 	name, ok := extensionNames[e]
 	return name, ok
@@ -322,7 +322,7 @@ var extensionModes = map[string]wire.Modes{
 // featureModes converts the extensions of a Full test; reflect, set when
 // the test fills a Reflect Octets field, asks for Reflect Octets too.
 //
-//declscope:package // the control server offers extensions the same way
+//declscope:shared // the control server offers extensions the same way
 func featureModes(names []string, reflect bool) wire.Modes {
 	var m wire.Modes
 	for _, n := range names {
@@ -397,7 +397,7 @@ func dscp(v uint32) (config.DSCP, error) {
 
 // ipvName converts an address family to its configuration name.
 //
-//declscope:package // RunTest reads requests with it
+//declscope:shared // RunTest reads requests with it
 func ipvName(f gotwampv1.AddressFamily) string {
 	switch f {
 	case gotwampv1.AddressFamily_ADDRESS_FAMILY_IPV4:
@@ -413,7 +413,7 @@ func ipvName(f gotwampv1.AddressFamily) string {
 
 // testSpecProto reports a resolved test definition.
 //
-//declscope:package // RunTest reports the spec it runs
+//declscope:shared // RunTest reports the spec it runs
 func testSpecProto(target, ipv, source string, p config.TestParams) *gotwampv1.TestSpec {
 	fam := gotwampv1.AddressFamily_ADDRESS_FAMILY_AUTO
 	switch ipv {
@@ -506,7 +506,7 @@ func protoSecurity(s string) gotwampv1.SecurityMode {
 // sessionFromProto reads a monitoring session of the API on top of the
 // sender defaults.
 //
-//declscope:package // the session RPCs read requests with it
+//declscope:shared // the session RPCs read requests with it
 func sessionFromProto(defaults config.TestParams, ps *gotwampv1.SessionSpec) (config.Session, error) {
 	s := config.Session{
 		Name:       ps.GetName(),
@@ -537,7 +537,7 @@ func sessionFromProto(defaults config.TestParams, ps *gotwampv1.SessionSpec) (co
 
 // sessionSpecProto reports a monitoring session definition.
 //
-//declscope:package // the session RPCs report definitions with it
+//declscope:shared // the session RPCs report definitions with it
 func sessionSpecProto(s config.Session) *gotwampv1.SessionSpec {
 	sc := &gotwampv1.Schedule{Type: gotwampv1.ScheduleType_SCHEDULE_TYPE_PERIODIC}
 	if s.Schedule.Type == "continuous" {

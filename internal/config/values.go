@@ -145,13 +145,13 @@ func ParsePrefix(s string) (netip.Prefix, error) {
 
 // securityModes are the values of security and reflector.control.modes.
 //
-//declscope:package // Validate checks both keys against it
+//declscope:shared // Validate checks both keys against it
 var securityModes = []string{"unauthenticated", "authenticated", "encrypted", "mixed"}
 
 // extensions are the values of extensions: the TWAMP extensions of RFC 5938
 // and RFC 6038.
 //
-//declscope:package // Default offers them all and Validate checks against them
+//declscope:shared // Default offers them all and Validate checks against them
 var extensions = []string{"individual_session_control", "reflect_octets", "symmetrical_size"}
 
 // OfferedModes returns the security modes the control server offers: Modes,

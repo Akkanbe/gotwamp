@@ -12,8 +12,6 @@ import (
 type Stage uint8
 
 // Stages of a TWAMP-Control exchange.
-//
-//declscope:ignore overexported // the RunStage values of the gRPC API, all of which the tests produce
 const (
 	StageConnect  Stage = 1 // establishing the TCP connection
 	StageGreeting Stage = 2 // waiting for or validating the Server Greeting

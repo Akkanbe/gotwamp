@@ -15,7 +15,7 @@ import (
 
 // newConfigCommand returns "gotwamp config" and its subcommands.
 //
-//declscope:package // a subcommand of the root
+//declscope:shared // a subcommand of the root
 func newConfigCommand(g *globals) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",

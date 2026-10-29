@@ -26,7 +26,7 @@ import (
 
 // liveConfig is the configuration in effect, which a reload replaces.
 //
-//declscope:package // every service reads the configuration through it
+//declscope:shared // every service reads the configuration through it
 type liveConfig struct {
 	p atomic.Pointer[config.Config]
 	// keys are sender.keys_file, read at startup; a reload keeps them.
@@ -35,14 +35,14 @@ type liveConfig struct {
 
 // get returns the configuration in effect.
 //
-//declscope:package // every service reads the configuration through it
+//declscope:shared // every service reads the configuration through it
 func (c *liveConfig) get() *config.Config { return c.p.Load() }
 
 // reloader re-reads the configuration file and applies what can change
 // without a restart (SPEC §9.3): the monitoring sessions, sender.defaults
 // and the log level.
 //
-//declscope:package // Start builds it; SIGHUP and ReloadConfig use it
+//declscope:shared // Start builds it; SIGHUP and ReloadConfig use it
 type reloader struct {
 	path  string
 	cfg   *liveConfig
@@ -63,7 +63,7 @@ var errNoConfigFile = errors.New("gotwampd runs on the built-in defaults; there 
 // reload applies the configuration file. On error nothing changes, and the
 // failure is logged whether SIGHUP or ReloadConfig asked for the reload.
 //
-//declscope:package // SIGHUP reloads through it
+//declscope:shared // SIGHUP reloads through it
 func (r *reloader) reload() (*gotwampv1.ReloadConfigResponse, error) {
 	resp, err := r.apply()
 	if err != nil {
@@ -161,7 +161,7 @@ type daemonService struct {
 
 // newDaemonService returns the DaemonService of a daemon started at started.
 //
-//declscope:package // Start registers it
+//declscope:shared // Start registers it
 func newDaemonService(cfg *liveConfig, opts Options, started time.Time, clk *clock.Monitor, ts tstamp.Mode, sched *schedule.Scheduler, rl *reloader, results *resultStore) *daemonService {
 	return &daemonService{cfg: cfg, opts: opts, started: started, clock: clk, tsMode: ts, sched: sched, reloader: rl, results: results}
 }

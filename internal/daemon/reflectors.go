@@ -27,7 +27,7 @@ import (
 // server with its Full Session-Reflector. It serves the ReflectorService. A
 // nil *reflectors is a disabled role.
 //
-//declscope:package // Start builds it; the daemon service and the exporter read it
+//declscope:shared // Start builds it; the daemon service and the exporter read it
 type reflectors struct {
 	gotwampv1.UnimplementedReflectorServiceServer
 	// disabled marks the service of a daemon without the reflector role.
@@ -47,7 +47,7 @@ type reflectors struct {
 // startReflectors binds every listener of the reflector role. Call serve to
 // start reflecting.
 //
-//declscope:package // Start builds the reflector role with it
+//declscope:shared // Start builds the reflector role with it
 func startReflectors(cfg *config.Config, keys keystore.Store, open *socketOpener, clockState reflector.ClockState, log *slog.Logger) (*reflectors, error) {
 	r := &reflectors{}
 	lcfg, err := lightConfig(cfg)
@@ -202,7 +202,7 @@ func lightConfig(cfg *config.Config) (reflector.Config, error) {
 
 // serve reflects until ctx is done, reporting failures to fail.
 //
-//declscope:package // Start serves the reflector role with it
+//declscope:shared // Start serves the reflector role with it
 func (r *reflectors) serve(ctx context.Context, wg *sync.WaitGroup, fail func(error)) {
 	if r == nil {
 		return
@@ -225,7 +225,7 @@ func (r *reflectors) serve(ctx context.Context, wg *sync.WaitGroup, fail func(er
 
 // close releases the sockets of a reflector role that will not be served.
 //
-//declscope:package // Start releases them when a later step fails
+//declscope:shared // Start releases them when a later step fails
 func (r *reflectors) close() {
 	if r == nil {
 		return
@@ -240,7 +240,7 @@ func (r *reflectors) close() {
 
 // lightAddrs returns the bound addresses of the Light reflector.
 //
-//declscope:package // Daemon.LightAddrs reports them
+//declscope:shared // Daemon.LightAddrs reports them
 func (r *reflectors) lightAddrs() []netip.AddrPort {
 	if r == nil || r.light == nil {
 		return nil
@@ -250,7 +250,7 @@ func (r *reflectors) lightAddrs() []netip.AddrPort {
 
 // controlAddrs returns the bound addresses of the TWAMP-Control server.
 //
-//declscope:package // Daemon.ControlAddrs reports them
+//declscope:shared // Daemon.ControlAddrs reports them
 func (r *reflectors) controlAddrs() []netip.AddrPort {
 	if r == nil {
 		return nil
@@ -265,7 +265,7 @@ func (r *reflectors) controlAddrs() []netip.AddrPort {
 // timestamping returns the timestamping mode of the reflector's sockets,
 // or false when no socket reports one.
 //
-//declscope:package // GetStatus and the exporter report it
+//declscope:shared // GetStatus and the exporter report it
 func (r *reflectors) timestamping() (tstamp.Mode, bool) {
 	if r == nil || r.light == nil {
 		return 0, false
@@ -283,7 +283,7 @@ func (r *reflectors) timestamping() (tstamp.Mode, bool) {
 // wildcard address on daemon.hardware_interface, iface, since the loopback
 // device has no card.
 //
-//declscope:package // Start reports it in GetStatus and the metrics
+//declscope:shared // Start reports it in GetStatus and the metrics
 func timestampingInEffect(r *reflectors, configured, iface string) tstamp.Mode {
 	if m, ok := r.timestamping(); ok {
 		return m
@@ -344,7 +344,7 @@ func (r *reflectors) enabled() bool { return r != nil && !r.disabled }
 
 // reflectorService returns the ReflectorService of r, which may be nil.
 //
-//declscope:package // Start registers it
+//declscope:shared // Start registers it
 func reflectorService(r *reflectors) *reflectors {
 	if r == nil {
 		return &reflectors{disabled: true}
@@ -429,7 +429,7 @@ func sessionSecurity(m wire.SecurityMode) gotwampv1.SecurityMode {
 
 // snapshot reports the reflector counters to the Prometheus exporter.
 //
-//declscope:package // Start hands it to the exporter
+//declscope:shared // Start hands it to the exporter
 func (r *reflectors) snapshot() prom.ReflectorSnapshot {
 	var s prom.ReflectorSnapshot
 	if r == nil {
@@ -470,14 +470,14 @@ func (r *reflectors) snapshot() prom.ReflectorSnapshot {
 
 // protoEndpoint converts an address and UDP port.
 //
-//declscope:package // the sender service reports endpoints too
+//declscope:shared // the sender service reports endpoints too
 func protoEndpoint(ap netip.AddrPort) *gotwampv1.Endpoint {
 	return &gotwampv1.Endpoint{Address: ap.Addr().String(), Port: uint32(ap.Port())}
 }
 
 // timestampingMode parses daemon.timestamping.
 //
-//declscope:package // test plans use the same mode
+//declscope:shared // test plans use the same mode
 func timestampingMode(s string) tstamp.Mode {
 	switch s {
 	case "hardware":

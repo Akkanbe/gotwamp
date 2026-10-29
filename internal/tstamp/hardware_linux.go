@@ -42,7 +42,7 @@ const (
 // errWildcard is the reason hardware mode falls back on a socket bound to the
 // wildcard address without Options.Interface.
 //
-//declscope:package // Listen reports it
+//declscope:shared // Listen reports it
 var errWildcard = errors.New("a socket bound to the wildcard address needs Options.Interface")
 
 // enableCard makes the card of ifname timestamp every received packet, and
@@ -53,7 +53,7 @@ var errWildcard = errors.New("a socket bound to the wildcard address needs Optio
 // PTP daemon on the same card keeps working, and it is left in place on
 // close, as other sockets may rely on it.
 //
-//declscope:package // Listen sets up the card in hardware mode with it
+//declscope:shared // Listen sets up the card in hardware mode with it
 func enableCard(fd int, ifname string, tx bool) (phc int, err error) {
 	info, err := getTsInfo(fd, ifname)
 	if err != nil {
@@ -96,7 +96,7 @@ func enableCard(fd int, ifname string, tx bool) (phc int, err error) {
 // missing. The card's is used unless it disagrees with the software one, or,
 // without one, lies in the future of meta.At (the user-space receive time).
 //
-//declscope:package // parseRxCmsgs decodes SCM_TIMESTAMPING through it
+//declscope:shared // parseRxCmsgs decodes SCM_TIMESTAMPING through it
 func pickRxTimestamp(meta *RxMeta, sw time.Time, swOK bool, hw time.Time, hwOK bool) {
 	if hwOK {
 		var ok bool

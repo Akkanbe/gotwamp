@@ -18,12 +18,12 @@ import (
 	gotwampv1 "github.com/Akkanbe/gotwamp/internal/api/gen/gotwamp/v1"
 )
 
-//declscope:package // ping and watch print JSON lines with it
+//declscope:shared // ping and watch print JSON lines with it
 var jsonl = protojson.MarshalOptions{UseProtoNames: true, EmitDefaultValues: true}
 
 // printJSONLine writes m as one line of JSON.
 //
-//declscope:package // ping and watch print JSON lines with it
+//declscope:shared // ping and watch print JSON lines with it
 func printJSONLine(w io.Writer, m proto.Message) error {
 	b, err := jsonl.Marshal(m)
 	if err != nil {
@@ -35,7 +35,7 @@ func printJSONLine(w io.Writer, m proto.Message) error {
 
 // endpoint formats an address and port.
 //
-//declscope:package // ping and reflector print endpoints
+//declscope:shared // ping and reflector print endpoints
 func endpoint(e *gotwampv1.Endpoint) string {
 	a := e.GetAddress()
 	if strings.Contains(a, ":") {
@@ -46,7 +46,7 @@ func endpoint(e *gotwampv1.Endpoint) string {
 
 // packetLine renders one reply.
 //
-//declscope:package // ping and watch print replies
+//declscope:shared // ping and watch print replies
 func packetLine(pr *gotwampv1.PacketResult) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "seq=%-3d", pr.GetSeq())
@@ -74,7 +74,7 @@ func packetLine(pr *gotwampv1.PacketResult) string {
 
 // summaryText renders the summary block of SPEC §10.3.
 //
-//declscope:package // ping and session show print summaries
+//declscope:shared // ping and session show print summaries
 func summaryText(target string, s *gotwampv1.RunSummary) string {
 	var b strings.Builder
 	title := "TWAMP statistics"
@@ -123,7 +123,7 @@ func summaryText(target string, s *gotwampv1.RunSummary) string {
 	return b.String()
 }
 
-//declscope:package // ping, watch and session print run errors
+//declscope:shared // ping, watch and session print run errors
 func stageName(s gotwampv1.RunStage) string {
 	return strings.ToLower(strings.TrimPrefix(s.String(), "RUN_STAGE_"))
 }
@@ -151,7 +151,7 @@ func us(d *durationpb.Duration) string {
 	return usN(d) + "us"
 }
 
-//declscope:package // stats prints delays too
+//declscope:shared // stats prints delays too
 func msN(d *durationpb.Duration) string {
 	if d == nil {
 		return "-"
@@ -168,7 +168,7 @@ func usN(d *durationpb.Duration) string {
 
 // summaryLine is a one-line summary.
 //
-//declscope:package // session list shows the latest result with it
+//declscope:shared // session list shows the latest result with it
 func summaryLine(s *gotwampv1.RunSummary) string {
 	line := fmt.Sprintf("%d/%d received, loss %.3f%%", s.GetReceived(), s.GetSent(), 100*s.GetLossRatio())
 	if r := s.GetRtt(); r.GetSamples() > 0 {
@@ -187,7 +187,7 @@ type table struct {
 
 // newTable starts a table with its header.
 //
-//declscope:package // every listing command prints tables
+//declscope:shared // every listing command prints tables
 func newTable(w io.Writer, header ...string) *table {
 	t := &table{tw: tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)}
 	t.row(header...)
@@ -196,7 +196,7 @@ func newTable(w io.Writer, header ...string) *table {
 
 // row adds a row.
 //
-//declscope:package // every listing command prints tables
+//declscope:shared // every listing command prints tables
 func (t *table) row(cells ...string) {
 	for i, c := range cells {
 		if i > 0 {
@@ -209,12 +209,12 @@ func (t *table) row(cells ...string) {
 
 // flush writes the table out.
 //
-//declscope:package // every listing command prints tables
+//declscope:shared // every listing command prints tables
 func (t *table) flush() error { return t.tw.Flush() }
 
 // sorted returns s sorted.
 //
-//declscope:package // session show sorts labels
+//declscope:shared // session show sorts labels
 func sorted(s []string) []string {
 	slices.Sort(s)
 	return s

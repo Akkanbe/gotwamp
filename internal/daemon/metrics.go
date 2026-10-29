@@ -13,7 +13,7 @@ import (
 
 // metricsServer serves /metrics and /healthz (SPEC §9.6).
 //
-//declscope:package // Start runs it
+//declscope:shared // Start runs it
 type metricsServer struct {
 	ln net.Listener
 	//declscope:private
@@ -22,7 +22,7 @@ type metricsServer struct {
 
 // listenMetrics binds the metrics endpoint of c at addr.
 //
-//declscope:package // Start runs it
+//declscope:shared // Start runs it
 func listenMetrics(addr string, c *prom.Collector) (*metricsServer, error) {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -33,7 +33,7 @@ func listenMetrics(addr string, c *prom.Collector) (*metricsServer, error) {
 
 // serve serves until shutdown.
 //
-//declscope:package // Start runs it
+//declscope:shared // Start runs it
 func (m *metricsServer) serve() error {
 	if err := m.srv.Serve(m.ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("metrics: %w", err)
@@ -44,7 +44,7 @@ func (m *metricsServer) serve() error {
 // shutdown stops serving, waiting up to a second, and no longer than
 // limit, for scrapes in flight.
 //
-//declscope:package // the daemon stops it
+//declscope:shared // the daemon stops it
 func (m *metricsServer) shutdown(limit time.Duration) {
 	ctx, cancel := context.WithTimeout(context.Background(), min(limit, time.Second))
 	defer cancel()
@@ -55,5 +55,5 @@ func (m *metricsServer) shutdown(limit time.Duration) {
 
 // addr returns the bound address.
 //
-//declscope:package // Daemon.MetricsAddr reports it
+//declscope:shared // Daemon.MetricsAddr reports it
 func (m *metricsServer) addr() net.Addr { return m.ln.Addr() }

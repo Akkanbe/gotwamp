@@ -15,7 +15,7 @@ import (
 // sender's target), and logs once per interface and outcome whether the card
 // timestamps or why the socket fell back to kernel timestamps.
 //
-//declscope:package // Start shares one among the reflector role and the runner
+//declscope:shared // Start shares one among the reflector role and the runner
 type socketOpener struct {
 	// iface is daemon.hardware_interface.
 	iface string
@@ -28,7 +28,7 @@ type socketOpener struct {
 
 // listen is tstamp.Listen, as the reflector role and Full runs open sockets.
 //
-//declscope:package // the reflectors' Deps.Listen and the Full runs' Listen
+//declscope:shared // the reflectors' Deps.Listen and the Full runs' Listen
 func (o *socketOpener) listen(network string, local netip.AddrPort, opts tstamp.Options) (tstamp.Conn, error) {
 	return o.listenTo(network, local, opts, netip.Addr{})
 }
@@ -36,7 +36,7 @@ func (o *socketOpener) listen(network string, local netip.AddrPort, opts tstamp.
 // listenTo is listen for a socket that sends to target, whose route names
 // the interface when none is configured.
 //
-//declscope:package // Light runs open their sockets with it
+//declscope:shared // Light runs open their sockets with it
 func (o *socketOpener) listenTo(network string, local netip.AddrPort, opts tstamp.Options, target netip.Addr) (tstamp.Conn, error) {
 	if o == nil {
 		return tstamp.Listen(network, local, opts)

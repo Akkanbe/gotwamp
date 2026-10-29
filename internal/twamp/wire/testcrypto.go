@@ -77,7 +77,7 @@ func (c *TestCrypto) Mode() SecurityMode { return c.mode }
 
 // Errors for test packets too short for the authenticated layouts.
 //
-//declscope:package // the layouts in security.go and their cryptography here
+//declscope:shared // the layouts in security.go and their cryptography here
 var (
 	errShortAuthSender    = fmt.Errorf("authenticated sender packet: %w", ErrShortBuffer)
 	errShortAuthReflector = fmt.Errorf("authenticated reflector packet: %w", ErrShortBuffer)

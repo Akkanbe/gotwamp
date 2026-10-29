@@ -18,7 +18,7 @@ import (
 
 // syncBuffer is a log sink safe for concurrent writes.
 //
-//declscope:package // the fixture of every daemon test file
+//declscope:shared // the fixture of every daemon test file
 type syncBuffer struct {
 	//declscope:private
 	mu sync.Mutex
@@ -42,7 +42,7 @@ func (s *syncBuffer) String() string {
 // testConfig is a configuration with both roles, a socket in a temporary
 // directory and a Light reflector on a kernel-chosen loopback port.
 //
-//declscope:package // the fixture of every daemon test file
+//declscope:shared // the fixture of every daemon test file
 func testConfig(t *testing.T) *config.Config {
 	t.Helper()
 	c := config.Default()
@@ -61,7 +61,7 @@ func testConfig(t *testing.T) *config.Config {
 
 // running is a started daemon and a client connected to it.
 //
-//declscope:package // the fixture of every daemon test file
+//declscope:shared // the fixture of every daemon test file
 type running struct {
 	d    *Daemon
 	conn *grpc.ClientConn
@@ -74,7 +74,7 @@ type running struct {
 
 // stop stops the daemon and waits for it.
 //
-//declscope:package // the fixture of every daemon test file
+//declscope:shared // the fixture of every daemon test file
 func (r *running) stop(t *testing.T) {
 	t.Helper()
 	r.cancel()
@@ -85,7 +85,7 @@ func (r *running) stop(t *testing.T) {
 
 // start starts a daemon with c and connects a client.
 //
-//declscope:package // the fixture of every daemon test file
+//declscope:shared // the fixture of every daemon test file
 func start(t *testing.T, c *config.Config, opts Options) *running {
 	t.Helper()
 	logs := &syncBuffer{}
@@ -113,7 +113,7 @@ func start(t *testing.T, c *config.Config, opts Options) *running {
 
 // waitFor polls cond until it holds or 10 s pass.
 //
-//declscope:package // the fixture of every daemon test file
+//declscope:shared // the fixture of every daemon test file
 func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
@@ -127,7 +127,7 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 
 // writeFile writes a configuration file in a temporary directory.
 //
-//declscope:package // the fixture of every daemon test file
+//declscope:shared // the fixture of every daemon test file
 func writeFile(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {

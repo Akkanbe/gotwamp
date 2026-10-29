@@ -26,7 +26,7 @@ type startFunc func(local, remote netip.AddrPort, sid []byte)
 // runner carries out the runs of ad-hoc tests and monitoring sessions
 // (schedule.Runner), in TWAMP Light or Full.
 //
-//declscope:package // Start builds it; RunTest and the scheduler run through it
+//declscope:shared // Start builds it; RunTest and the scheduler run through it
 type runner struct {
 	// resolve looks host names up; tests replace it.
 	resolve func(ctx context.Context, network, host string) ([]netip.Addr, error)
@@ -47,7 +47,7 @@ type runner struct {
 
 // newRunner returns a runner.
 //
-//declscope:package // Start builds it
+//declscope:shared // Start builds it
 func newRunner(clock func() (bool, time.Duration), sids *sidSink, controlSetup func(*store.SessionInfo, time.Duration)) *runner {
 	return &runner{clock: clock, resolve: net.DefaultResolver.LookupNetIP, sids: sids, controlSetup: controlSetup}
 }
@@ -65,7 +65,7 @@ func (r *runner) Run(ctx context.Context, spec *schedule.SessionSpec, hooks send
 // or the scheduler's for a continuous session). Control protocol failures
 // come back as *schedule.StageError. session is nil for ad-hoc tests.
 //
-//declscope:package // RunTest runs ad-hoc tests through it
+//declscope:shared // RunTest runs ad-hoc tests through it
 func (r *runner) run(ctx context.Context, p *testPlan, cfg sender.Config, hooks sender.Hooks, started startFunc, session *schedule.SessionSpec) (sender.Summary, error) {
 	if started == nil {
 		started = func(netip.AddrPort, netip.AddrPort, []byte) {}
@@ -148,7 +148,7 @@ func (r *runner) runFull(ctx context.Context, p *testPlan, cfg sender.Config, ad
 // target resolves host in the address family ipv asks for, or that of
 // source.
 //
-//declscope:package // RunTest resolves ad-hoc targets before it starts
+//declscope:shared // RunTest resolves ad-hoc targets before it starts
 func (r *runner) target(ctx context.Context, host, ipv string, source netip.Addr) (netip.Addr, error) {
 	network := "ip"
 	switch {
@@ -238,7 +238,7 @@ type sidSink struct {
 
 // newSIDSink returns a sidSink passing events to next.
 //
-//declscope:package // Start puts it in front of the result sinks
+//declscope:shared // Start puts it in front of the result sinks
 func newSIDSink(next store.ResultSink) *sidSink {
 	return &sidSink{next: next, sids: make(map[string][]byte)}
 }
@@ -246,7 +246,7 @@ func newSIDSink(next store.ResultSink) *sidSink {
 // set records the SID of session's current run; nil forgets it. Ad-hoc
 // runs (empty name) are not recorded.
 //
-//declscope:package // a deleted session's SID is forgotten in Start's drop
+//declscope:shared // a deleted session's SID is forgotten in Start's drop
 func (s *sidSink) set(session string, sid []byte) {
 	if session == "" {
 		return

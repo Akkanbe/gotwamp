@@ -103,8 +103,6 @@ func (cfg *Config) validate() error {
 type State uint8
 
 // Control-Client states.
-//
-//declscope:ignore overexported // the values State reports; the tests check the state machine with them
 const (
 	StateClosed State = iota
 	StateIdle
