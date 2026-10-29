@@ -14,14 +14,14 @@ import (
 // remoteFlags select gotwampd's API over TCP with mutual TLS instead of the
 // Unix domain socket (ADR 0010).
 //
-//declscope:package // the global flags hold them
+//declscope:shared // the global flags hold them
 type remoteFlags struct {
 	server, ca, cert, key, serverName string
 }
 
 // register adds the flags to f, with defaults from the environment.
 //
-//declscope:package // the root command registers them
+//declscope:shared // the root command registers them
 func (r *remoteFlags) register(f *pflag.FlagSet, getenv func(string) string) {
 	f.StringVar(&r.server, "server", getenv("GOTWAMP_SERVER"),
 		"gotwampd API over TCP, host:port, with mutual TLS instead of the socket (env GOTWAMP_SERVER)")
@@ -33,7 +33,7 @@ func (r *remoteFlags) register(f *pflag.FlagSet, getenv func(string) string) {
 
 // check refuses an incomplete remote setting: TCP goes with mutual TLS only.
 //
-//declscope:package // the root command checks the flags
+//declscope:shared // the root command checks the flags
 func (r *remoteFlags) check(changed func(string) bool) error {
 	if r.server == "" {
 		for _, name := range []string{"tls-ca", "tls-cert", "tls-key", "tls-server-name"} {
@@ -55,7 +55,7 @@ func (r *remoteFlags) check(changed func(string) bool) error {
 // dial connects to gotwampd at --server. The connection is lazy, as over
 // the socket: an unreachable or refusing daemon shows in the first RPC.
 //
-//declscope:package // conn dials the remote API through it
+//declscope:shared // conn dials the remote API through it
 func (r *remoteFlags) dial() (*grpc.ClientConn, error) {
 	pem, err := os.ReadFile(r.ca)
 	if err != nil {

@@ -15,7 +15,7 @@ type adjtimex struct{}
 
 // systemSource returns the kernel clock source of this platform.
 //
-//declscope:package // NewMonitor's default source
+//declscope:shared // NewMonitor's default source
 func systemSource() source { return adjtimex{} }
 
 func (adjtimex) read() (bool, time.Duration, error) {

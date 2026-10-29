@@ -15,8 +15,8 @@ claims a dependency that does not actually exist.
 
 - Make [declscope](https://github.com/mpyw/declscope) a required lint, run by `make lint` and in CI
 - Run `declscope shrink ./...` first, then `declscope ./...`. Unexporting unnecessary exports with `shrink` reveals new boundary violations, so clear those first
-- The principle is one file = one namespace. Declarations are file-private by default. Only declarations used from other files are marked explicitly with `//declscope:package // <reason>`
-- Fix diagnostics by changing structure, such as splitting or merging files, not by scattering directives. Do not hide boundaries with `//declscope:core` or a file-wide `//declscope:package`
+- The principle is one file = one namespace. Declarations are file-private by default. Only declarations used from other files are marked explicitly with `//declscope:shared // <reason>`
+- Fix diagnostics by changing structure, such as splitting or merging files, not by scattering directives. Do not hide boundaries with `//declscope:core` or a file-wide `//declscope:shared`
 - Use the default settings (boundary on, surplus strict, unused strict, naming rule off). `.declscope.yaml` only excludes generated code (`internal/api/gen`) via `filter.omit`
 - Do not create a baseline (this is a new repository, so keep zero diagnostics from the start)
 
@@ -30,6 +30,6 @@ claims a dependency that does not actually exist.
 
 ## Consequences
 
-- In each package, dependencies between files are made explicit as `//declscope:package`, with the reason recorded
+- In each package, dependencies between files are made explicit as `//declscope:shared`, with the reason recorded
 - When adding a new file, you must decide which declarations to expose to other files
 - Do not set `rules.boundary: off` to silence declscope diagnostics

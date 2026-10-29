@@ -27,7 +27,7 @@ func RouteInterface(dst netip.Addr) (string, error) {
 // interfaceOf returns the name of the interface that has addr. An IPv6
 // address with a zone names the interface itself.
 //
-//declscope:package // Listen finds the card to set up in hardware mode with it
+//declscope:shared // Listen finds the card to set up in hardware mode with it
 func interfaceOf(addr netip.Addr) (string, error) {
 	if zone := addr.Zone(); zone != "" {
 		if i, err := strconv.Atoi(zone); err == nil {

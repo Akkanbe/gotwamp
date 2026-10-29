@@ -27,7 +27,7 @@ const socketDirMode = 0o750
 // daemon is removed; a socket another daemon still serves, or a file that is
 // not a socket, is an error. The socket is removed when the listener closes.
 //
-//declscope:package // Start opens the API socket through it
+//declscope:shared // Start opens the API socket through it
 func listenUnix(path string, mode fs.FileMode, group string, log *slog.Logger) (net.Listener, error) {
 	dir := filepath.Dir(path)
 	switch di, err := os.Stat(dir); {

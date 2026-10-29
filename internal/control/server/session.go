@@ -100,8 +100,6 @@ var (
 type SessionState uint8
 
 // Test session states. A released session is no longer listed.
-//
-//declscope:ignore overexported // the states Sessions reports; the tests check each
 const (
 	SessionAccepted SessionState = iota + 1 // SID issued, socket bound
 	SessionActive                           // reflecting

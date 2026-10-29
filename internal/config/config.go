@@ -35,7 +35,7 @@ type Config struct {
 
 	// warnings are problems that do not stop the daemon.
 	//
-	//declscope:package // Validate (validate.go) records them
+	//declscope:shared // Validate (validate.go) records them
 	warnings []Problem
 }
 

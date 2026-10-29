@@ -65,7 +65,7 @@ type sessionFile struct {
 // parseSessionFile reads one session. Unknown keys are errors; gotwampd
 // validates the values.
 //
-//declscope:package // session add and update read files with it
+//declscope:shared // session add and update read files with it
 func parseSessionFile(b []byte) (*gotwampv1.SessionSpec, error) {
 	var f sessionFile
 	dec := yaml.NewDecoder(bytes.NewReader(b))

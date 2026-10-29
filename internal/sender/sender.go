@@ -33,7 +33,7 @@ const (
 
 // Defaults the run reads too (SPEC Appendix A, §8.4).
 //
-//declscope:package // DefaultConfig and normalize set them; the run falls back on the errors, and its tests on the interval
+//declscope:shared // DefaultConfig and normalize set them; the run falls back on the errors, and its tests on the interval
 const (
 	defaultInterval       = 100 * time.Millisecond
 	defaultUserspaceError = 50 * time.Microsecond
@@ -195,7 +195,7 @@ func WithConn(conn tstamp.Conn) Option {
 // withFull marks a session negotiated with TWAMP-Control: PaddingAuto is
 // random, and the reflector numbers its packets per session.
 //
-//declscope:package // RunFull sets it; the run tests set it to play a Full session
+//declscope:shared // RunFull sets it; the run tests set it to play a Full session
 func withFull() Option {
 	return func(o *options) { o.full = true }
 }
@@ -204,7 +204,7 @@ func withFull() Option {
 // session in the authenticated or encrypted mode (RFC 4656 §4.1.2); the
 // zero value leaves them unauthenticated.
 //
-//declscope:package // RunFull sets it from Accept-Session; the run applies it
+//declscope:shared // RunFull sets it from Accept-Session; the run applies it
 type testSecurity struct {
 	mode wire.SecurityMode
 	keys wire.TestKeys
@@ -213,7 +213,7 @@ type testSecurity struct {
 // withSecurity sends and receives the test packets in mode, which takes
 // effect only when authenticated or encrypted, with the session's keys.
 //
-//declscope:package // RunFull passes the mode it negotiated
+//declscope:shared // RunFull passes the mode it negotiated
 func withSecurity(mode wire.SecurityMode, keys wire.TestKeys) Option {
 	return func(o *options) {
 		if mode := mode.TestMode(); mode == wire.SecurityAuthenticated || mode == wire.SecurityEncrypted {
@@ -233,7 +233,7 @@ func (t testSecurity) testMode() wire.SecurityMode {
 // testLayout is the RFC 6038 layout of the test packets of a TWAMP Full
 // session.
 //
-//declscope:package // RunFull sets it from Accept-Session; the run checks the reflected octets
+//declscope:shared // RunFull sets it from Accept-Session; the run checks the reflected octets
 type testLayout struct {
 	layout       wire.PaddingLayout
 	serverOctets uint16
@@ -243,7 +243,7 @@ type testLayout struct {
 // the MBZ octets of Symmetrical Size, and the server octets at the start of
 // the padding to be reflected, whose return each reply is checked for.
 //
-//declscope:package // RunFull passes what it negotiated
+//declscope:shared // RunFull passes what it negotiated
 func withLayout(layout wire.PaddingLayout, serverOctets uint16) Option {
 	return func(o *options) { o.layout = testLayout{layout: layout, serverOctets: serverOctets} }
 }
@@ -251,7 +251,7 @@ func withLayout(layout wire.PaddingLayout, serverOctets uint16) Option {
 // withRand sets the source of random padding. The default is ChaCha8
 // seeded from crypto/rand.
 //
-//declscope:package // the padding tests make the random padding predictable
+//declscope:shared // the padding tests make the random padding predictable
 func withRand(r io.Reader) Option {
 	return func(o *options) { o.rand = r }
 }

@@ -14,7 +14,7 @@ import (
 
 // newStatusCommand returns "gotwamp status".
 //
-//declscope:package // a subcommand of the root
+//declscope:shared // a subcommand of the root
 func newStatusCommand(g *globals) *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",

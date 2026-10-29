@@ -31,7 +31,7 @@ const maxReply = 65535
 
 // runParams is what a Sender hands over to its run.
 //
-//declscope:package // Sender.Run fills it
+//declscope:shared // Sender.Run fills it
 type runParams struct {
 	// cfg is normalized.
 	cfg  Config
@@ -52,7 +52,7 @@ type runParams struct {
 
 // runSession carries out one run of a Sender.
 //
-//declscope:package // Sender.Run hands its state over here
+//declscope:shared // Sender.Run hands its state over here
 func runSession(ctx context.Context, p runParams) (Summary, error) {
 	r := newRun(p.cfg, p.conn, p.packet, p.clock, p.hooks)
 	r.fresh, r.reflected = p.fresh, p.reflected

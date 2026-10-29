@@ -54,7 +54,7 @@ type senderService struct {
 // newSenderService returns the SenderService of a daemon whose runs end
 // with runCtx.
 //
-//declscope:package // Start registers it
+//declscope:shared // Start registers it
 func newSenderService(runCtx context.Context, cfg *liveConfig, r *runner, sched *schedule.Scheduler, st store.Store, drop func(string), log *slog.Logger) *senderService {
 	limits := cfg.get().Daemon.Limits
 	return &senderService{

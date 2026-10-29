@@ -14,7 +14,7 @@ import (
 
 // newReflectorCommand returns "gotwamp reflector status|sessions".
 //
-//declscope:package // a subcommand of the root
+//declscope:shared // a subcommand of the root
 func newReflectorCommand(g *globals) *cobra.Command {
 	cmd := &cobra.Command{Use: "reflector", Short: "Show the reflector role of gotwampd"}
 	run := func(f func(context.Context, gotwampv1.ReflectorServiceClient, io.Writer) error) func(*cobra.Command, []string) error {

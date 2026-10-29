@@ -67,14 +67,14 @@ func (e *exitError) Unwrap() error { return e.err }
 
 // exitf returns an error that makes gotwamp exit with code.
 //
-//declscope:package // every subcommand reports its failures through it
+//declscope:shared // every subcommand reports its failures through it
 func exitf(code int, format string, args ...any) error {
 	return &exitError{code: code, err: fmt.Errorf(format, args...)}
 }
 
 // globals are the global flags and the environment of one invocation.
 //
-//declscope:package // every subcommand reads them
+//declscope:shared // every subcommand reads them
 type globals struct {
 	info    BuildInfo
 	output  string // table | json | jsonl
@@ -102,7 +102,7 @@ type globals struct {
 
 // onInterrupt makes f handle the first interrupt; nil restores canceling.
 //
-//declscope:package // ping stops its run gracefully through it
+//declscope:shared // ping stops its run gracefully through it
 func (g *globals) onInterrupt(f func()) {
 	if f == nil {
 		g.softStop.Store(nil)
@@ -219,7 +219,7 @@ func newRootCommand(g *globals) *cobra.Command {
 // conn connects to gotwampd. The connection is lazy: an unreachable daemon
 // shows in the first RPC, which rpcError turns into ExitUnavailable.
 //
-//declscope:package // every subcommand that talks to gotwampd connects through it
+//declscope:shared // every subcommand that talks to gotwampd connects through it
 func (g *globals) conn() (*grpc.ClientConn, error) {
 	if g.remote.server != "" {
 		return g.remote.dial()
@@ -238,14 +238,14 @@ func (g *globals) conn() (*grpc.ClientConn, error) {
 
 // warn prints a warning on the standard error.
 //
-//declscope:package // ping warns of oversized packets
+//declscope:shared // ping warns of oversized packets
 func (g *globals) warn(msg string) {
 	_, _ = fmt.Fprintln(g.env.Stderr, "gotwamp: warning:", msg)
 }
 
 // rpcError maps a failed RPC to an exit status.
 //
-//declscope:package // every subcommand that talks to gotwampd reports through it
+//declscope:shared // every subcommand that talks to gotwampd reports through it
 func (g *globals) rpcError(err error) error {
 	st, _ := status.FromError(err)
 	switch st.Code() {
@@ -273,7 +273,7 @@ func (g *globals) rpcError(err error) error {
 // printProto writes m as indented JSON (--output json) or one line
 // (--output jsonl).
 //
-//declscope:package // the JSON outputs of every subcommand
+//declscope:shared // the JSON outputs of every subcommand
 func (g *globals) printProto(m proto.Message) error {
 	opts := protojson.MarshalOptions{UseProtoNames: true, EmitDefaultValues: true}
 	if g.output == "json" {

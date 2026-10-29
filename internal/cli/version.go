@@ -10,7 +10,7 @@ import (
 
 // newVersionCommand returns "gotwamp version". It does not contact gotwampd.
 //
-//declscope:package // a subcommand of the root
+//declscope:shared // a subcommand of the root
 func newVersionCommand(g *globals) *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",

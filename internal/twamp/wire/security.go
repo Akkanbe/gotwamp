@@ -21,7 +21,7 @@ const (
 	// hmacSize is the length of every HMAC field, in control messages and
 	// test packets.
 	//
-	//declscope:package // the control and test-packet cryptography use it
+	//declscope:shared // the control and test-packet cryptography use it
 	hmacSize = 16
 	// DefaultPaddingLength makes unauthenticated packets the same size in both
 	// directions (SPEC appendix A).
