@@ -152,6 +152,11 @@ func RunFull(ctx context.Context, cfg Config, fc FullConfig, opts ...Option) (Su
 	if err := fc.validate(); err != nil {
 		return Summary{}, err
 	}
+	// The security settings fail here rather than after connecting, with
+	// the stage Handshake gives them.
+	if err := (client.Config{Modes: fc.Modes, KeyID: fc.KeyID, Passphrase: fc.Passphrase, Features: fc.Features}).Validate(); err != nil {
+		return Summary{}, &client.Error{Stage: client.StageSetup, Err: err}
+	}
 	check := cfg
 	check.Target = fc.Server
 	if err := normalize(&check, true); err != nil {

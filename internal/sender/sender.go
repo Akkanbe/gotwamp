@@ -411,6 +411,12 @@ func normalize(cfg *Config, full bool) error {
 		return fmt.Errorf("sender: ttl %d out of range 1-255", cfg.TTL)
 	case cfg.PaddingFill > PaddingZero:
 		return fmt.Errorf("sender: unknown padding fill %d", cfg.PaddingFill)
+	case cfg.Timestamping > tstamp.ModeHardware:
+		return fmt.Errorf("sender: unknown timestamping mode %v", cfg.Timestamping)
+	case cfg.ReadBuffer < 0:
+		return fmt.Errorf("sender: read buffer %d is negative", cfg.ReadBuffer)
+	case cfg.UserspaceError < 0 || cfg.KernelError < 0 || cfg.HardwareError < 0 || cfg.MethodError < 0:
+		return errors.New("sender: timestamping errors must not be negative")
 	}
 	return nil
 }
