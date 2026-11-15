@@ -64,7 +64,8 @@ type Config struct {
 	// from this address and port are accepted.
 	Target netip.AddrPort
 	// Source is the local address and port to bind. The zero value lets the
-	// system choose both. It is not used with WithConn.
+	// system choose both. An IPv4-mapped IPv6 address stands for its IPv4
+	// address. It is not used with WithConn.
 	Source netip.AddrPort
 	// Count is the number of packets of the run. Zero runs continuously,
 	// summarizing every Window, until the context is canceled.
@@ -374,6 +375,9 @@ func normalize(cfg *Config, full bool) error {
 		return errors.New("sender: target address and port are required")
 	}
 	cfg.Target = netip.AddrPortFrom(cfg.Target.Addr().Unmap(), cfg.Target.Port())
+	if cfg.Source.IsValid() {
+		cfg.Source = netip.AddrPortFrom(cfg.Source.Addr().Unmap(), cfg.Source.Port())
+	}
 	if cfg.Source.IsValid() && cfg.Source.Addr().Is4() != cfg.Target.Addr().Is4() {
 		return fmt.Errorf("sender: source %v and target %v differ in address family", cfg.Source, cfg.Target)
 	}

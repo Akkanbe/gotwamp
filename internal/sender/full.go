@@ -196,7 +196,7 @@ func RunFull(ctx context.Context, cfg Config, fc FullConfig, opts ...Option) (Su
 	if err := fc.checkReflection(check.Padding); err != nil {
 		return Summary{}, &client.Error{Stage: client.StageRequest, Err: err}
 	}
-	cfg.Timeout = check.Timeout
+	cfg.Timeout, cfg.Source = check.Timeout, check.Source
 
 	tcp, err := fc.dial(ctx, cfg.Source.Addr())
 	if err != nil {

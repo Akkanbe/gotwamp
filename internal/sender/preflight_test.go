@@ -119,3 +119,23 @@ func TestLightPreflight(t *testing.T) {
 		}
 	}
 }
+
+// TestFullDialsFromUnmappedSource checks that the control connection is
+// dialed from the IPv4 address an IPv4-mapped source stands for.
+func TestFullDialsFromUnmappedSource(t *testing.T) {
+	var dialed, listened bool
+	cfg, fc := DefaultConfig(netip.AddrPort{}), preflightConfig(&dialed, &listened)
+	cfg.Source = netip.MustParseAddrPort("[::ffff:127.0.0.1]:0")
+	var local netip.Addr
+	dial := fc.Dial
+	fc.Dial = func(ctx context.Context, l netip.Addr, server netip.AddrPort) (net.Conn, error) {
+		local = l
+		return dial(ctx, l, server)
+	}
+	if _, err := RunFull(t.Context(), cfg, fc); !errors.Is(err, errDialed) {
+		t.Fatalf("error=%v, want the dial error", err)
+	}
+	if want := netip.MustParseAddr("127.0.0.1"); local != want {
+		t.Errorf("dialed from %v, want %v", local, want)
+	}
+}
