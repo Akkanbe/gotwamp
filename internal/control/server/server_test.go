@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -30,11 +31,12 @@ type fakeSession struct {
 	// closed, like a session whose UDP reader is slow to stop.
 	hold, closing chan struct{}
 
-	mu      sync.Mutex
-	startAt time.Time
-	stopAt  time.Time
-	closed  int
-	last    time.Time
+	mu       sync.Mutex
+	startAt  time.Time
+	stopAt   time.Time
+	closed   int
+	closedBy []string // the server path of each Close call, see closer
+	last     time.Time
 }
 
 func (s *fakeSession) Start(at time.Time) { s.mu.Lock(); s.startAt = at; s.mu.Unlock() }
@@ -45,8 +47,14 @@ func (s *fakeSession) Stop(until time.Time) {
 }
 
 func (s *fakeSession) Close() error {
+	s.mu.Lock()
+	s.closedBy = append(s.closedBy, closer())
+	first := len(s.closedBy) == 1
+	s.mu.Unlock()
 	if s.hold != nil {
-		close(s.closing)
+		if first {
+			close(s.closing)
+		}
 		<-s.hold
 	}
 	s.mu.Lock()
@@ -70,12 +78,41 @@ func (s *fakeSession) state() (start, stop time.Time, closed int) {
 	return s.startAt, s.stopAt, s.closed
 }
 
+// closers returns the server path of each Close call so far.
+func (s *fakeSession) closers() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.closedBy)
+}
+
+// The server paths that close a session, as closer tells them apart.
+const (
+	byShutdown   = "shutdown"
+	byDrainTimer = "drain timer"
+	byOther      = "other"
+)
+
+// closer reports which server path the calling goroutine runs: the shutdown
+// of Serve, or the drain timer of a closed connection.
+func closer() string {
+	buf := make([]byte, 64<<10)
+	stack := string(buf[:runtime.Stack(buf, false)])
+	switch {
+	case strings.Contains(stack, "server.(*Server).shutdown("):
+		return byShutdown
+	case strings.Contains(stack, "server.(*conn).abandon.func"):
+		return byDrainTimer
+	default:
+		return byOther
+	}
+}
+
 // fakeHandler opens fakeSessions; inUse ports fail with EADDRINUSE.
 type fakeHandler struct {
 	mu       sync.Mutex
 	inUse    map[uint16]bool
-	err      error         // returned for every port not in inUse, when set
-	hold     chan struct{} // given to every session opened, when set
+	err      error // returned for every port not in inUse, when set
+	hold     bool  // gives every session opened its own hold, when set
 	sessions []*fakeSession
 	tried    []uint16
 }
@@ -91,8 +128,8 @@ func (h *fakeHandler) Open(spec server.SessionSpec) (server.Session, error) {
 		return nil, h.err
 	}
 	s := &fakeSession{spec: spec}
-	if h.hold != nil {
-		s.hold, s.closing = h.hold, make(chan struct{})
+	if h.hold {
+		s.hold, s.closing = make(chan struct{}), make(chan struct{})
 	}
 	h.sessions = append(h.sessions, s)
 	return s, nil
@@ -864,54 +901,201 @@ func (l *pipeListener) Close() error {
 
 func (l *pipeListener) Addr() net.Addr { return net.TCPAddrFromAddrPort(serverAddr) }
 
+// drainServer runs Serve on one connection that starts a session for each
+// timeout given to newDrainServer and then closes, so that every session
+// drains for its Timeout. Each session's Close waits for its hold.
+type drainServer struct {
+	*harness
+	cancel context.CancelFunc
+	served chan error
+}
+
+func newDrainServer(t *testing.T, cfg server.Config, timeouts ...uint32) *drainServer {
+	t.Helper()
+	hs := newHarness(t, cfg)
+	hs.h.hold = true
+	c, s := net.Pipe()
+	ln := &pipeListener{
+		conn:   addrConn{s, net.TCPAddrFromAddrPort(serverAddr), net.TCPAddrFromAddrPort(clientAddr)},
+		closed: make(chan struct{}),
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	ds := &drainServer{harness: hs, cancel: cancel, served: make(chan error, 1)}
+	go func() { ds.served <- hs.s.Serve(ctx, ln) }()
+
+	r := hs.rawHandshakeOn(addrConn{c, net.TCPAddrFromAddrPort(clientAddr), net.TCPAddrFromAddrPort(serverAddr)})
+	for _, timeout := range timeouts {
+		req := validRequest()
+		req.Timeout = ntptime.New(timeout, 0)
+		if as := r.request(req); as.Accept != wire.AcceptOK {
+			t.Fatalf("request: %+v", as)
+		}
+	}
+	r.send((&wire.StartSessions{}).Append(nil))
+	r.recv(wire.StartAckSize)
+	_ = r.conn.Close()
+	synctest.Wait()
+	if n := len(hs.s.Sessions()); n != len(timeouts) {
+		t.Fatalf("%d sessions draining, want %d", n, len(timeouts))
+	}
+	return ds
+}
+
+// running reports an error if Serve has returned.
+func (ds *drainServer) running(t *testing.T, while string) {
+	t.Helper()
+	synctest.Wait()
+	select {
+	case err := <-ds.served:
+		t.Errorf("Serve returned (%v) while %s", err, while)
+		ds.served <- err
+	default:
+	}
+}
+
+// wait waits for Serve to return, an hour at most.
+func (ds *drainServer) wait(t *testing.T) {
+	t.Helper()
+	select {
+	case err := <-ds.served:
+		if err != nil {
+			t.Errorf("Serve: %v", err)
+		}
+	case <-time.After(time.Hour):
+		t.Fatal("Serve did not return")
+	}
+}
+
+// closedOnceBy checks that sess was closed once, by the given server path.
+func closedOnceBy(t *testing.T, name string, sess *fakeSession, by string) {
+	t.Helper()
+	if got := sess.closers(); !slices.Equal(got, []string{by}) {
+		t.Errorf("%s closed by %q, want once by %q", name, got, by)
+	}
+	if _, _, closed := sess.state(); closed != 1 {
+		t.Errorf("%s: %d Close calls returned, want 1", name, closed)
+	}
+}
+
 // TestServeWaitsForDrainRelease shuts the server down while the drain timer
 // of a closed connection is still closing its session. The timer has taken
 // the session out of the server's table already, so Serve must wait for the
 // timer itself.
 func TestServeWaitsForDrainRelease(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		hs := newHarness(t, server.Config{})
-		hs.h.hold = make(chan struct{})
-		c, s := net.Pipe()
-		ln := &pipeListener{
-			conn:   addrConn{s, net.TCPAddrFromAddrPort(serverAddr), net.TCPAddrFromAddrPort(clientAddr)},
-			closed: make(chan struct{}),
-		}
-		ctx, cancel := context.WithCancel(t.Context())
-		defer cancel()
-		served := make(chan error, 1)
-		go func() { served <- hs.s.Serve(ctx, ln) }()
-
-		r := hs.rawHandshakeOn(addrConn{c, net.TCPAddrFromAddrPort(clientAddr), net.TCPAddrFromAddrPort(serverAddr)})
-		req := validRequest()
-		req.Timeout = ntptime.New(5, 0)
-		r.request(req)
-		r.send((&wire.StartSessions{}).Append(nil))
-		r.recv(wire.StartAckSize)
-		_ = r.conn.Close()
+		ds := newDrainServer(t, server.Config{}, 5)
 		time.Sleep(5 * time.Second) // the drain timer fires
-		sess := hs.h.session(0)
+		sess := ds.h.session(0)
 		<-sess.closing
-		if n := len(hs.s.Sessions()); n != 0 {
+		if n := len(ds.s.Sessions()); n != 0 {
 			t.Fatalf("%d sessions listed while the drain timer releases the last one", n)
 		}
 
-		cancel()
-		synctest.Wait()
-		select {
-		case err := <-served:
-			t.Errorf("Serve returned (%v) while a released session was still closing", err)
-			served <- err
-		default:
-		}
-		close(hs.h.hold)
-		if err := <-served; err != nil {
-			t.Errorf("Serve: %v", err)
-		}
-		if _, _, closed := sess.state(); closed != 1 {
-			t.Errorf("session closed %d times, want 1", closed)
-		}
+		ds.cancel()
+		ds.running(t, "a released session was still closing")
+		close(sess.hold)
+		ds.wait(t)
+		closedOnceBy(t, "session", sess, byDrainTimer)
 	})
+}
+
+// TestServeStopsPendingDrainTimer shuts the server down before the drain
+// timer of a closed connection fires. Shutdown stops the timer and closes the
+// session itself, without waiting for the drain deadline.
+func TestServeStopsPendingDrainTimer(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ds := newDrainServer(t, server.Config{RefWait: 2 * time.Hour}, 3600)
+		sess := ds.h.session(0)
+		began := time.Now()
+		ds.cancel()
+		<-sess.closing
+		ds.running(t, "shutdown was still closing a draining session")
+		close(sess.hold)
+		ds.wait(t)
+		if d := time.Since(began); d != 0 {
+			t.Errorf("Serve returned %v after cancel, want it not to wait for the drain deadline", d)
+		}
+		closedOnceBy(t, "session", sess, byShutdown)
+
+		time.Sleep(2 * time.Hour) // past the drain deadline
+		synctest.Wait()
+		closedOnceBy(t, "session after its drain deadline", sess, byShutdown)
+	})
+}
+
+// TestServeWaitsForDrainTimerAfterSnapshot lets a drain timer fire after
+// shutdown has listed its session but before shutdown releases it: shutdown
+// is still closing the other session. The timer closes the session; shutdown
+// must neither close it again nor return before the timer is done.
+func TestServeWaitsForDrainTimerAfterSnapshot(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ds := newDrainServer(t, server.Config{}, 5, 10)
+		a, b := ds.h.session(0), ds.h.session(1)
+		ds.cancel()
+		// Shutdown releases the sessions in map order: first is the one it
+		// closes first, and stops the timer of.
+		first, second := a, b
+		select {
+		case <-a.closing:
+		case <-b.closing:
+			first, second = b, a
+		}
+		time.Sleep(10 * time.Second) // the timer of the second session fires
+		<-second.closing
+		close(first.hold)
+		ds.running(t, "a drain timer was still closing a session shutdown had listed")
+		if got := second.closers(); len(got) != 1 {
+			t.Errorf("second session closed by %q, want once", got)
+		}
+		close(second.hold)
+		ds.wait(t)
+		closedOnceBy(t, "first session", first, byShutdown)
+		closedOnceBy(t, "second session", second, byDrainTimer)
+	})
+}
+
+// TestServeDrainTimerRacesShutdown lets a drain timer fire at the instant
+// shutdown, done closing the other session, goes on to release the timer's
+// session. Either may release it first, and shutdown may find the timer fired
+// but the session not yet released, which no test can force from outside the
+// package. Whatever the order, the session is closed once and Serve returns
+// only after that Close.
+func TestServeDrainTimerRacesShutdown(t *testing.T) {
+	var byShutdownRuns int
+	const runs = 100
+	for range runs {
+		synctest.Test(t, func(t *testing.T) {
+			ds := newDrainServer(t, server.Config{}, 5, 10)
+			a, b := ds.h.session(0), ds.h.session(1)
+			began := time.Now()
+			ds.cancel()
+			first, second, deadline := a, b, began.Add(10*time.Second)
+			select {
+			case <-a.closing:
+			case <-b.closing:
+				first, second, deadline = b, a, began.Add(5*time.Second)
+			}
+			time.Sleep(time.Until(deadline)) // wake with the second timer
+			close(first.hold)
+			<-second.closing
+			ds.running(t, "the second session was still closing")
+			close(second.hold)
+			ds.wait(t)
+			closedOnceBy(t, "first session", first, byShutdown)
+			by := second.closers()
+			if len(by) != 1 || by[0] == byOther {
+				t.Fatalf("second session closed by %q, want once by shutdown or its drain timer", by)
+			}
+			if _, _, closed := second.state(); closed != 1 {
+				t.Errorf("second session: %d Close calls returned, want 1", closed)
+			}
+			if by[0] == byShutdown {
+				byShutdownRuns++
+			}
+		})
+	}
+	t.Logf("shutdown released the second session in %d of %d runs", byShutdownRuns, runs)
 }
 
 func TestConfig(t *testing.T) {

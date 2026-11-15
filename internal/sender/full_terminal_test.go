@@ -22,17 +22,20 @@ import (
 
 // terminalConn observes Stop before its write can complete, independently of
 // summary callback timing. It can fail that write like a broken TCP connection.
+// stopMsg keeps the Stop message written, or attempted, last.
 type terminalConn struct {
 	net.Conn
 	stop    chan struct{}
 	once    sync.Once
 	stopErr error
+	stopMsg []byte
 }
 
 func (c *terminalConn) LocalAddr() net.Addr  { return net.TCPAddrFromAddrPort(senderAddr) }
 func (c *terminalConn) RemoteAddr() net.Addr { return net.TCPAddrFromAddrPort(reflectorAddr) }
 func (c *terminalConn) Write(b []byte) (int, error) {
 	if cmd := wire.Command(b[0]); cmd == wire.CommandStopSessions || cmd == wire.CommandStopNSessions {
+		c.stopMsg = append([]byte(nil), b...)
 		c.once.Do(func() { close(c.stop) })
 		if c.stopErr != nil {
 			return 0, c.stopErr
@@ -41,7 +44,7 @@ func (c *terminalConn) Write(b []byte) (int, error) {
 	return c.Conn.Write(b)
 }
 
-func terminalConfig(t *testing.T, isc bool, l *link, stopErr error, finish func(net.Conn, <-chan struct{})) (FullConfig, func() error) {
+func terminalConfig(t *testing.T, isc bool, l tstamp.Conn, stopErr error, finish func(net.Conn, <-chan struct{})) (FullConfig, func() error) {
 	t.Helper()
 	a, b := net.Pipe()
 	c := &terminalConn{Conn: a, stop: make(chan struct{}), stopErr: stopErr}
@@ -342,6 +345,185 @@ func TestFullContinuousTerminalStateWithoutPendingPackets(t *testing.T) {
 					}
 					if withSummary && (len(hooked) != 1 || !reflect.DeepEqual(sum, hooked[0])) {
 						t.Errorf("hooked=%+v returned=%+v", hooked, sum)
+					}
+				})
+			})
+		}
+	}
+}
+
+// faultyLink is a link whose reads fail once failing is set. before runs
+// just before the first failed read returns; after runs when the run, having
+// seen the failure, clears its read deadline, that is once the receiver has
+// returned the error and before Run does.
+type faultyLink struct {
+	*link
+	mu            sync.Mutex
+	failing       bool
+	err           error
+	before, after func()
+}
+
+func (f *faultyLink) fail() {
+	f.mu.Lock()
+	f.failing = true
+	f.mu.Unlock()
+}
+
+func (f *faultyLink) ReadFrom(b []byte) (int, netip.AddrPort, tstamp.RxMeta, error) {
+	f.mu.Lock()
+	failing, before := f.failing, f.before
+	if failing {
+		f.before = nil
+	}
+	f.mu.Unlock()
+	if !failing {
+		return f.link.ReadFrom(b)
+	}
+	if before != nil {
+		before()
+	}
+	return 0, netip.AddrPort{}, tstamp.RxMeta{}, f.err
+}
+
+func (f *faultyLink) SetReadDeadline(t time.Time) error {
+	f.mu.Lock()
+	var after func()
+	if f.failing && t.IsZero() {
+		after, f.after = f.after, nil
+	}
+	f.mu.Unlock()
+	if after != nil {
+		after() // without the lock: it may wait for goroutines that take it
+	}
+	return f.link.SetReadDeadline(t)
+}
+
+// TestFullFailurePriority pins how RunFull ranks the failures that meet in
+// one run: a lost control connection, then a failure of the measurement,
+// then the caller's cancellation, then a failed Stop-Sessions. Only a lost
+// connection and a failed Stop-Sessions mark the results invalid.
+func TestFullFailurePriority(t *testing.T) {
+	for _, isc := range []bool{false, true} {
+		name := "ordinary"
+		if isc {
+			name = "isc"
+		}
+		for _, event := range []string{
+			"socket_failure_then_cancel", "cancel_then_socket_failure", "socket_and_stop_failure",
+			"socket_failure_and_control_loss", "cancel_delay_and_stop_failure",
+		} {
+			t.Run(name+"/"+event, func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					ctx, cancel := context.WithCancel(t.Context())
+					defer cancel()
+					socketErr := errors.New("injected socket failure")
+					var stopErr error
+					if event == "socket_and_stop_failure" || event == "cancel_delay_and_stop_failure" {
+						stopErr = errors.New("injected stop failure")
+					}
+					l := &faultyLink{link: newLink(), err: socketErr}
+					fc, closeControl := terminalConfig(t, isc, l, stopErr, func(peer net.Conn, stopped <-chan struct{}) {
+						<-stopped
+						if stopErr == nil && isc {
+							_, _ = io.ReadFull(peer, make([]byte, wire.SessionControlSize(1)))
+							_, _ = peer.Write((&wire.SessionControl{Command: wire.CommandStopNAck, SIDs: []wire.SID{{1}}}).Append(nil))
+						}
+						_, _ = io.Copy(io.Discard, peer)
+					})
+					var tc *terminalConn
+					dial := fc.Dial
+					fc.Dial = func(ctx context.Context, local netip.Addr, server netip.AddrPort) (net.Conn, error) {
+						conn, err := dial(ctx, local, server)
+						tc, _ = conn.(*terminalConn)
+						return conn, err
+					}
+					switch event {
+					case "socket_failure_then_cancel":
+						l.after = cancel
+					case "cancel_then_socket_failure":
+						l.before = cancel
+					case "socket_failure_and_control_loss":
+						l.after = func() {
+							_ = closeControl()
+							synctest.Wait() // the client has seen the connection close
+						}
+					}
+					cfg := testConfig(10)
+					if event == "cancel_delay_and_stop_failure" {
+						cfg.Count = 1
+						fc.EndDelay = time.Second
+					}
+					var summaries []Summary
+					hooks := Hooks{
+						Packet: func(p PacketResult) {
+							if p.Result.Kind != stats.KindAccepted {
+								return
+							}
+							if event == "cancel_delay_and_stop_failure" {
+								time.AfterFunc(20*time.Millisecond, cancel)
+								return
+							}
+							l.fail()
+						},
+						Summary: func(s Summary) { summaries = append(summaries, s) },
+					}
+					sum, err := RunFull(ctx, cfg, fc, WithHooks(hooks))
+					// A hook that never ran, or a cancellation that never came,
+					// would leave some cases passing for the wrong reason.
+					l.mu.Lock()
+					pending := l.before != nil || l.after != nil
+					l.mu.Unlock()
+					canceled := event == "socket_failure_then_cancel" || event == "cancel_then_socket_failure" || event == "cancel_delay_and_stop_failure"
+					if pending || canceled != (ctx.Err() != nil) {
+						t.Fatalf("injection did not run: hook pending %v, canceled %v", pending, ctx.Err() != nil)
+					}
+
+					var want error
+					wantAccept, wantInvalid, wantAborted := wire.AcceptFailure, false, true
+					switch event {
+					case "socket_failure_then_cancel":
+						want = socketErr
+					case "cancel_then_socket_failure":
+						// The receiver saw the cancellation first: the failed
+						// read is how the cancellation ended it.
+						want, wantAccept = context.Canceled, wire.AcceptOK
+					case "socket_and_stop_failure":
+						want, wantInvalid = socketErr, true
+					case "socket_failure_and_control_loss":
+						want, wantInvalid = client.ErrControlLost, true
+					case "cancel_delay_and_stop_failure":
+						want, wantAccept, wantInvalid, wantAborted = stopErr, wire.AcceptOK, true, false
+					}
+					if !errors.Is(err, want) {
+						t.Errorf("error=%v, want %v", err, want)
+					}
+					for _, other := range []error{socketErr, stopErr, context.Canceled} {
+						if other != nil && other != want && errors.Is(err, other) {
+							t.Errorf("error=%v also matches %v", err, other)
+						}
+					}
+					if sum.Invalid != wantInvalid || sum.Aborted != wantAborted {
+						t.Errorf("Invalid=%v Aborted=%v, want %v %v", sum.Invalid, sum.Aborted, wantInvalid, wantAborted)
+					}
+					if len(summaries) != 1 || !reflect.DeepEqual(summaries[0], sum) {
+						t.Errorf("callback=%+v, returned=%+v", summaries, sum)
+					}
+					switch {
+					case event == "socket_failure_and_control_loss":
+						if tc.stopMsg != nil {
+							t.Errorf("Stop sent after the control connection was lost: %x", tc.stopMsg)
+						}
+					case tc.stopMsg == nil:
+						t.Error("no Stop sent")
+					case !isc:
+						var stop wire.StopSessions
+						if err := stop.Decode(tc.stopMsg); err != nil {
+							t.Fatal(err)
+						}
+						if stop.Accept != wantAccept {
+							t.Errorf("Stop-Sessions Accept=%v, want %v", stop.Accept, wantAccept)
+						}
 					}
 				})
 			})
