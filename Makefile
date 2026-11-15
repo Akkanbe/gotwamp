@@ -24,7 +24,7 @@ PROTOC_GEN_GO_GRPC_VERSION ?= v1.6.2
 GOFUMPT_VERSION            ?= v0.12.0
 GOLANGCI_LINT_VERSION      ?= v2.14.0
 GOVULNCHECK_VERSION        ?= v1.8.0
-DECLSCOPE_VERSION          ?= v0.14.0
+DECLSCOPE_VERSION          ?= v0.24.1
 
 # The docker compose staging (deploy/staging, docs/ops/staging.md).
 STAGING      := docker compose -f deploy/staging/docker-compose.yml
@@ -179,6 +179,6 @@ tools: ## Install the development tools into GOBIN
 	$(GO) install mvdan.cc/gofumpt@$(GOFUMPT_VERSION)
 	$(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 	$(GO) install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
-	# declscope v0.14.0 declares go 1.27.0, so building it needs a Go 1.27
+	# declscope v0.24.1 declares go 1.27.0, so building it needs a Go 1.27
 	# toolchain; let go fetch one for this install only (go.mod is unaffected).
 	GOTOOLCHAIN=auto $(GO) install github.com/mpyw/declscope/cmd/declscope@$(DECLSCOPE_VERSION)

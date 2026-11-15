@@ -106,7 +106,7 @@ const defaultSendTTL = 255
 // measure computes the per-packet indicators of r for packets sent with the
 // IP TTL sendTTL. A sendTTL of zero means 255.
 //
-//declscope:package // the Accumulator measures every reply with it
+//declscope:shared // the Accumulator measures every reply with it
 func measure(r PacketRecord, sendTTL uint8) Metrics {
 	if sendTTL == 0 {
 		sendTTL = defaultSendTTL

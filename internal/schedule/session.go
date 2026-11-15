@@ -20,7 +20,7 @@ import (
 
 // deps are what a session needs from its Scheduler.
 //
-//declscope:package // the Scheduler hands them to every session
+//declscope:shared // the Scheduler hands them to every session
 type deps struct {
 	runner     Runner
 	sink       store.ResultSink
@@ -31,7 +31,7 @@ type deps struct {
 
 // session is the scheduler goroutine of one monitoring session (SPEC §4.4).
 //
-//declscope:package // the Scheduler keeps one per session
+//declscope:shared // the Scheduler keeps one per session
 type session struct {
 	spec SessionSpec
 	//declscope:private
@@ -56,7 +56,7 @@ type session struct {
 	lastErr string
 }
 
-//declscope:package // the Scheduler creates every session
+//declscope:shared // the Scheduler creates every session
 func newSession(spec SessionSpec, d deps) *session {
 	info := spec.Info
 	info.Name = spec.Name
@@ -65,7 +65,7 @@ func newSession(spec SessionSpec, d deps) *session {
 
 // start launches the session goroutine under parent.
 //
-//declscope:package // the Scheduler starts sessions
+//declscope:shared // the Scheduler starts sessions
 func (s *session) start(parent context.Context) {
 	ctx, cancel := context.WithCancel(parent)
 	s.cancel = cancel
@@ -83,7 +83,7 @@ func (s *session) start(parent context.Context) {
 // interrupt cancels the session without waiting, so that several sessions
 // can wind their runs down at once before stop waits for each.
 //
-//declscope:package // the Scheduler stops sessions
+//declscope:shared // the Scheduler stops sessions
 func (s *session) interrupt() {
 	if s.cancel != nil {
 		s.cancel()
@@ -93,7 +93,7 @@ func (s *session) interrupt() {
 // stop cancels the session and waits for its run to end. It does nothing
 // on a session not started.
 //
-//declscope:package // the Scheduler stops sessions
+//declscope:shared // the Scheduler stops sessions
 func (s *session) stop() {
 	if s.cancel == nil {
 		return
@@ -103,7 +103,7 @@ func (s *session) stop() {
 	s.cancel, s.done = nil, nil
 }
 
-//declscope:package // the Scheduler reports sessions
+//declscope:shared // the Scheduler reports sessions
 func (s *session) status(state State) Status {
 	s.mu.Lock()
 	defer s.mu.Unlock()

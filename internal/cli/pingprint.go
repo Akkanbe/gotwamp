@@ -30,14 +30,14 @@ type pingPrinter struct {
 
 // newPingPrinter returns the printer of one ping.
 //
-//declscope:package // runPing renders the stream through it
+//declscope:shared // runPing renders the stream through it
 func newPingPrinter(w io.Writer, output string, quiet bool) *pingPrinter {
 	return &pingPrinter{w: w, output: output, quiet: quiet}
 }
 
 // event renders one event.
 //
-//declscope:package // runPing renders the stream through it
+//declscope:shared // runPing renders the stream through it
 func (p *pingPrinter) event(ev *gotwampv1.TestEvent) error {
 	switch e := ev.GetEvent().(type) {
 	case *gotwampv1.TestEvent_Started:
@@ -90,7 +90,7 @@ func (p *pingPrinter) event(ev *gotwampv1.TestEvent) error {
 
 // finish writes what is written at the end: the json document.
 //
-//declscope:package // runPing ends the output through it
+//declscope:shared // runPing ends the output through it
 func (p *pingPrinter) finish() error {
 	if p.output != "json" {
 		return nil
@@ -105,7 +105,7 @@ func (p *pingPrinter) finish() error {
 // interrupted reports a run cut short by SIGINT, whose summary the daemon
 // could no longer deliver.
 //
-//declscope:package // runPing reports interruptions through it
+//declscope:shared // runPing reports interruptions through it
 func (p *pingPrinter) interrupted() error {
 	if err := p.finish(); err != nil {
 		return err
@@ -124,7 +124,7 @@ func localStage(s gotwampv1.RunStage) bool {
 
 // exitStatus is ExitOK when at least one reply arrived (SPEC §10.4).
 //
-//declscope:package // runPing exits with it
+//declscope:shared // runPing exits with it
 func (p *pingPrinter) exitStatus() error {
 	if e := p.runErr; e != nil && p.summary == nil {
 		code := ExitProtocol

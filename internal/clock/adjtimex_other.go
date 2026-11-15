@@ -14,7 +14,7 @@ type unsupported struct{}
 
 // systemSource returns the kernel clock source of this platform.
 //
-//declscope:package // NewMonitor's default source
+//declscope:shared // NewMonitor's default source
 func systemSource() source { return unsupported{} }
 
 func (unsupported) read() (bool, time.Duration, error) {

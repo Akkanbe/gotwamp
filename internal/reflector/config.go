@@ -21,7 +21,7 @@ const (
 
 // Defaults the Light and the Full reflector share (SPEC appendix A).
 //
-//declscope:package // Config and FullConfig take the same defaults
+//declscope:shared // Config and FullConfig take the same defaults
 const (
 	defaultTTL           = 255
 	defaultMaxPacketSize = 9000
@@ -30,7 +30,7 @@ const (
 
 // maxUDPPayload is the largest UDP payload over IPv4.
 //
-//declscope:package // bounds MaxPacketSize in Config and FullConfig
+//declscope:shared // bounds MaxPacketSize in Config and FullConfig
 const maxUDPPayload = 65507
 
 // DefaultListeners are the Light listeners used when none are configured.
@@ -46,8 +46,6 @@ var DefaultListeners = []netip.AddrPort{
 type Sequence uint8
 
 // Sequence values.
-//
-//declscope:ignore overexported // SequencePerFlow is the zero value, named for a configuration that says so; gotwampd leaves it unset
 const (
 	// SequencePerFlow counts from 0 per flow, the default.
 	SequencePerFlow Sequence = iota
@@ -60,8 +58,6 @@ const (
 type DSCPPolicy uint8
 
 // DSCPPolicy values.
-//
-//declscope:ignore overexported // DSCPCopy is the zero value, named for a configuration that says so; gotwampd leaves it unset
 const (
 	// DSCPCopy copies the DSCP of each received packet, the default.
 	DSCPCopy DSCPPolicy = iota

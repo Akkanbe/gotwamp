@@ -28,7 +28,7 @@ type eventQueue struct {
 
 // newEventQueue returns an empty queue for the events of run runID.
 //
-//declscope:package // RunTest streams through it
+//declscope:shared // RunTest streams through it
 func newEventQueue(runID string) *eventQueue {
 	return &eventQueue{runID: runID, notify: make(chan struct{}, 1)}
 }
@@ -36,7 +36,7 @@ func newEventQueue(runID string) *eventQueue {
 // offer queues a per-packet event, or drops it when eventQueueSize of them
 // are waiting.
 //
-//declscope:package // the packet and loss hooks of RunTest
+//declscope:shared // the packet and loss hooks of RunTest
 func (q *eventQueue) offer(ev *gotwampv1.TestEvent) {
 	q.mu.Lock()
 	if q.packets >= eventQueueSize {
@@ -50,7 +50,7 @@ func (q *eventQueue) offer(ev *gotwampv1.TestEvent) {
 
 // put queues an event that must not be dropped.
 //
-//declscope:package // RunTest's start, summary and error events
+//declscope:shared // RunTest's start, summary and error events
 func (q *eventQueue) put(ev *gotwampv1.TestEvent) {
 	q.mu.Lock()
 	q.add(ev)
@@ -69,13 +69,13 @@ func (q *eventQueue) add(ev *gotwampv1.TestEvent) {
 
 // ready is signaled when events are waiting.
 //
-//declscope:package // RunTest waits on it
+//declscope:shared // RunTest waits on it
 func (q *eventQueue) ready() <-chan struct{} { return q.notify }
 
 // take returns the waiting events, preceded by an EventsDropped event when
 // per-packet events were dropped.
 //
-//declscope:package // RunTest sends what it takes
+//declscope:shared // RunTest sends what it takes
 func (q *eventQueue) take() []*gotwampv1.TestEvent {
 	q.mu.Lock()
 	defer q.mu.Unlock()

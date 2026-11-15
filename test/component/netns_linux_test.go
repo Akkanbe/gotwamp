@@ -23,8 +23,9 @@ import (
 // neighbour solicitation sent right after the link came up and lost
 // (IPv6).
 //
-//declscope:package // the fixture every component test builds on
+//declscope:shared // the fixture every component test builds on
 type topology struct {
+	//declscope:private
 	t      *testing.T
 	a, b   string // namespace names
 	addrA4 netip.Addr
@@ -34,8 +35,6 @@ type topology struct {
 }
 
 // requireRoot skips the test unless it can manage network namespaces.
-//
-//declscope:package // every component test calls it first
 func requireRoot(t *testing.T) {
 	t.Helper()
 	if os.Geteuid() != 0 {
@@ -51,7 +50,7 @@ func requireRoot(t *testing.T) {
 // newTopology creates the namespaces and the veth pair, and removes them when
 // the test ends.
 //
-//declscope:package // the fixture every component test builds on
+//declscope:shared // the fixture every component test builds on
 func newTopology(t *testing.T) *topology {
 	t.Helper()
 	requireRoot(t)
@@ -113,7 +112,7 @@ func (tp *topology) exec(ns string, args ...string) string {
 // the qdisc, after netem has held it (docs/ops/staging.md). Delay a TWAMP
 // run on the reflector's side.
 //
-//declscope:package // each test picks its impairment
+//declscope:shared // each test picks its impairment
 func (tp *topology) netem(ns string, params ...string) {
 	tp.t.Helper()
 	dev := "va"
@@ -139,7 +138,7 @@ func (tp *topology) netem(ns string, params ...string) {
 // line carries the file:line of the test (the CI failure report keeps only
 // such lines).
 //
-//declscope:package // the tests log the output of tools through it
+//declscope:shared // the tests log the output of tools through it
 func logLines(t *testing.T, prefix, text string) {
 	t.Helper()
 	// A plain loop: the body of a range-over-func loop runs in a closure,
@@ -153,7 +152,7 @@ func logLines(t *testing.T, prefix, text string) {
 // Sockets fn creates belong to ns for their whole life and may be used from
 // any goroutine afterwards.
 //
-//declscope:package // tests open their sockets inside a namespace through it
+//declscope:shared // tests open their sockets inside a namespace through it
 func (tp *topology) in(ns string, fn func()) {
 	tp.t.Helper()
 	runtime.LockOSThread()

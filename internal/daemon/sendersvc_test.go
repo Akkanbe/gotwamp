@@ -26,7 +26,7 @@ import (
 
 // lightSpec is a Light test of count packets to target.
 //
-//declscope:package // the RunTest tests of several files build their requests with it
+//declscope:shared // the RunTest tests of several files build their requests with it
 func lightSpec(target netip.AddrPort, count uint32) *gotwampv1.TestSpec {
 	return &gotwampv1.TestSpec{
 		Target:       target.Addr().String(),
@@ -40,7 +40,7 @@ func lightSpec(target netip.AddrPort, count uint32) *gotwampv1.TestSpec {
 
 // collect reads a RunTest stream to its end.
 //
-//declscope:package // the RunTest tests of several files read their streams with it
+//declscope:shared // the RunTest tests of several files read their streams with it
 func collect(t *testing.T, stream gotwampv1.SenderService_RunTestClient) []*gotwampv1.TestEvent {
 	t.Helper()
 	var evs []*gotwampv1.TestEvent

@@ -11,8 +11,6 @@ import (
 type Modes uint32
 
 // Mode bits.
-//
-//declscope:ignore overexported // the whole IANA registry, so that String names every bit a peer offers
 const (
 	ModeUnauthenticated          Modes = 1 << 0 // RFC 4656 §3.1
 	ModeAuthenticated            Modes = 1 << 1 // RFC 4656 §3.1

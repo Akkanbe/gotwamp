@@ -329,7 +329,7 @@ The generated code (`internal/api/gen`) is excluded from every Go linter.
 to the file" and "shared within the package", and checks them. gotwamp requires it ([ADR 0004](docs/adr/0004-declscope.md)).
 
 - The principle is **one file = one namespace**. A package-level declaration is private to its file by default;
-  only the declarations other files use are marked with `//declscope:package // <reason>`.
+  only the declarations other files use are marked with `//declscope:shared // <reason>`.
 - Diagnostics are resolved by structure, splitting or merging files, not by a flood of directives.
 - `declscope shrink ./...` runs first. It reports exported identifiers under `internal/` that no other package
   uses; unexporting them can reveal new boundary violations, so it is settled before the analyzer

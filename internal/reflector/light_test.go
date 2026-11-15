@@ -23,7 +23,7 @@ import (
 
 // rxPacket is a datagram the fake socket hands to ReadFrom, or an error.
 //
-//declscope:package // shared by the Light and Full tests
+//declscope:shared // shared by the Light and Full tests
 type rxPacket struct {
 	b    []byte
 	from netip.AddrPort
@@ -33,12 +33,14 @@ type rxPacket struct {
 
 // txPacket is a datagram written through the fake socket.
 //
-//declscope:package // shared by the Light and Full tests
+//declscope:shared // shared by the Light and Full tests
 type txPacket struct {
 	b   []byte
 	to  netip.AddrPort
 	tos int
 	// src is the source address given to WriteToFrom; zero for WriteTo.
+	//
+	//declscope:private
 	src netip.Addr
 	//declscope:private
 	at time.Time
@@ -48,7 +50,7 @@ type txPacket struct {
 // inside a synctest bubble synctest.Wait returns once every queued packet
 // has been handled.
 //
-//declscope:package // shared by the Light and Full tests
+//declscope:shared // shared by the Light and Full tests
 type fakeConn struct {
 	local  netip.AddrPort
 	opts   tstamp.Options
@@ -109,7 +111,7 @@ func (c *fakeConn) Close() error {
 
 // sent returns and forgets the datagrams written so far.
 //
-//declscope:package // shared by the Light and Full tests
+//declscope:shared // shared by the Light and Full tests
 func (c *fakeConn) sent() []txPacket {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -170,7 +172,7 @@ func start(t *testing.T, cfg reflector.Config, deps reflector.Deps) *harness {
 // senderPacket builds a Session-Sender packet of n octets whose padding
 // counts up from 0.
 //
-//declscope:package // shared by the Light and Full tests
+//declscope:shared // shared by the Light and Full tests
 func senderPacket(seq uint32, n int) []byte {
 	p := wire.SenderPacket{Seq: seq, Timestamp: ntptime.New(0x11223344, 0x55667788), ErrorEstimate: errest.New(true, false, 10, 210)}
 	b := make([]byte, max(n, wire.SenderHeaderSize))
@@ -210,7 +212,7 @@ func (h *harness) reflect(i int, b []byte, from netip.AddrPort, meta tstamp.RxMe
 // eventually waits up to 5 s for cond, for counters that real sockets
 // update asynchronously.
 //
-//declscope:package // used by the loopback tests
+//declscope:shared // used by the loopback tests
 func eventually(t *testing.T, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
