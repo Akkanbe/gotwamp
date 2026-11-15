@@ -174,9 +174,12 @@ func (fc FullConfig) checkReflection(padding int) error {
 //
 // Errors of the control protocol, including a failed connect, are
 // *client.Error, whose Stage and Accept tell what failed (SPEC §10.4 exit
-// code 4). A canceled ctx returns its error with the aborted summary. When
-// the control connection is lost during the run, the summary comes with an
-// error matching client.ErrControlLost.
+// code 4). A canceled ctx returns its error with the aborted summary; once
+// the packets are all decided, a cancellation only cuts EndDelay short.
+// When the control connection is lost before Stop-Sessions is
+// acknowledged, the summary is marked invalid and comes with an error
+// matching client.ErrControlLost; a failed Stop-Sessions marks it invalid
+// too.
 func RunFull(ctx context.Context, cfg Config, fc FullConfig, opts ...Option) (Summary, error) {
 	fc = fc.withDefaults()
 	if err := fc.validate(); err != nil {
@@ -242,16 +245,25 @@ func RunFull(ctx context.Context, cfg Config, fc FullConfig, opts ...Option) (Su
 	cfg.Source = netip.AddrPort{}
 	// Results collected when the control connection was lost are kept but
 	// marked invalid (SPEC §5.6), in the summaries the hooks get too, which
-	// also carry the SID.
+	// also carry the SID. A completed window of a continuous run is
+	// reported at once; the summary of a bounded run and those of aborted
+	// windows wait for the end of the session, which can still mark them
+	// invalid, so that the hooks get what RunFull returns.
 	var o options
 	for _, f := range opts {
 		f(&o)
 	}
-	if h := o.hooks; h.Summary != nil {
-		report := h.Summary
+	var held []Summary
+	report := o.hooks.Summary
+	if report != nil {
+		h := o.hooks
 		h.Summary = func(s Summary) {
 			s.SID = sess.SID
 			s.Invalid = s.Invalid || c.Err() != nil
+			if cfg.Count > 0 || s.Aborted {
+				held = append(held, s)
+				return
+			}
 			report(s)
 		}
 		opts = append(opts, WithHooks(h))
@@ -278,25 +290,42 @@ func RunFull(ctx context.Context, cfg Config, fc FullConfig, opts ...Option) (Su
 	}()
 	sum, runErr := snd.Run(runCtx)
 	sum.SID = sess.SID
-	if lost := c.Err(); lost != nil {
-		// No Stop-Sessions is possible; the results may be invalid (SPEC §5.6).
-		sum.Invalid = true
-		return sum, lost
-	}
-	if runErr == nil && fc.EndDelay > 0 {
+	// An error other than the cancellation of ctx is a failure of the
+	// socket, which Stop-Sessions reports to the server.
+	failed := runErr != nil && (ctx.Err() == nil || !errors.Is(runErr, context.Cause(ctx)))
+	if runErr == nil && fc.EndDelay > 0 && c.Err() == nil {
 		select {
 		case <-time.After(fc.EndDelay):
 		case <-ctx.Done():
+		case <-c.Lost():
 		}
 	}
-	accept := wire.AcceptOK
-	if runErr != nil && ctx.Err() == nil {
-		accept = wire.AcceptFailure // a socket failure: the results are invalid
+	var stopErr error
+	if c.Err() == nil {
+		accept := wire.AcceptOK
+		if failed {
+			accept = wire.AcceptFailure
+		}
+		stopCtx, stopCancel := context.WithTimeout(context.WithoutCancel(ctx), stopTimeout)
+		stopErr = stop(stopCtx, c, sess, accept)
+		stopCancel()
 	}
-	stopCtx, stopCancel := context.WithTimeout(context.WithoutCancel(ctx), stopTimeout)
-	defer stopCancel()
-	if err := stop(stopCtx, c, sess, accept); err != nil && runErr == nil {
-		return sum, err
+	// A control connection lost during the run or before Stop-Sessions was
+	// acknowledged, or a failed Stop-Sessions, leaves the results invalid
+	// (SPEC §5.6). A socket failure aborts the run without that mark, as in
+	// a Light run.
+	lost := c.Err()
+	switch {
+	case lost != nil:
+		runErr = lost
+	case runErr == nil:
+		runErr = stopErr
+	}
+	invalid := lost != nil || stopErr != nil
+	sum.Invalid = sum.Invalid || invalid
+	for _, s := range held {
+		s.Invalid = s.Invalid || invalid
+		report(s)
 	}
 	return sum, runErr
 }
