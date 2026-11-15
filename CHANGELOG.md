@@ -75,6 +75,7 @@ Work in progress toward the first release (v0.1.0).
 - systemd unit: a configuration error (exit status 1) is not restarted over and over (`RestartPreventExitStatus=1`). The container image has a HEALTHCHECK.
 - Filling in the build information (version / commit / Go version) moved to `internal/buildinfo`, shared by gotwampd and the CLI. ULID generation is in `internal/ulid` alone.
 - Building needs Go 1.27 (the `go` directive is 1.27.4; it was 1.26.9). The container images build with `golang:1.27`, and `make tools` no longer needs a toolchain switch to install declscope.
+- Linting: declscope v0.24.1 (it was v0.14.0). The directive `//declscope:package` is now `//declscope:shared`, and the repository carries both declscope skills (`.claude/skills/`) (#2).
 
 ### Fixed
 

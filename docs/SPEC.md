@@ -2,9 +2,9 @@
 
 | Item | Value |
 |------|------|
-| Version | 0.4 (draft) |
+| Version | 0.5 (draft) |
 | Created | 2026-10-03 |
-| Updated | 2026-10-05 (0.4) |
+| Updated | 2026-11-15 (0.5) |
 | Subject | gotwamp (a TWAMP Sender / Reflector implementation in Go) |
 | Related documents | [docs/PLAN.md](PLAN.md) implementation plan, [docs/research/](research/) research notes |
 
@@ -26,6 +26,7 @@ Version history:
 | 0.2 | 2026-10-04 | Reflects the audit's SPEC fix proposals (9 from audit-fixes-base, 2 from audit-fixes-wire) and the "align the specification with the implementation" items of audit audit-spec §2.2. Implemented behaviour is taken as authoritative; where there was a choice, the implemented option was adopted (W5: (b), B23: (a)). The changes are listed in the table below |
 | 0.3 | 2026-10-04 | Reflects M7 (authenticated modes, hardware timestamping, TCP + mTLS) and the results of maintenance reviews A / B. The changes are listed in the "Changes in 0.3" table |
 | 0.4 | 2026-10-05 | (Same-day correction: aligned the SQLite storage format (version 2 compression) and the read range of `--since` in §9.4 and §13 with the implementation. Codex round 4 N2) Reflects the rest of M7 (RFC 5938 / RFC 6038 / STAMP, the SQLite result store) and the completed wiring into the daemon / CLI (A / E / M, hardware, daily rotation), and removes the "pending wiring" notes of 0.3. The Full reflector does not enforce Start Time by default (`enforce_start_time`, CMP-26). The changes are listed in the "Changes in 0.4" table |
+| 0.5 | 2026-11-15 | §5.6: loss of the control connection ends the `end_delay` wait; the summary of a bounded Full run is reported after Stop-Sessions, and is invalid when the control connection was lost or Stop-Sessions failed (the fixes taken from pull request #1). No other section changes |
 
 Changes in 0.2:
 
