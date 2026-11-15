@@ -122,8 +122,9 @@ type Config struct {
 	// DSCPECNMonitoring reads the S-DSCP-ECN octet at offset 41 of the
 	// replies (RFC 7750): the DSCP and ECN with which the test packets
 	// reached the reflector. The reflector must write it: a Light reflector
-	// configured for it, or a Full session that negotiated Modes bit 8.
-	// Replies shorter than 44 octets are then malformed.
+	// configured for it. Full runs reject it, since the Control-Client does
+	// not negotiate Modes bit 8. Replies shorter than 44 octets are then
+	// malformed.
 	DSCPECNMonitoring bool
 	// STAMP sends STAMP Session-Sender packets (RFC 8762 §4.2.1, TWAMP Light
 	// only): the 44-octet base with SSID, and the Padding, when not zero,
@@ -395,6 +396,8 @@ func normalize(cfg *Config, full bool) error {
 		cfg.StatelessReflector = false
 	}
 	switch {
+	case cfg.DSCPECNMonitoring && full:
+		return errors.New("sender: dscp_ecn_monitoring is supported in light mode only")
 	case cfg.STAMP && full:
 		return errors.New("sender: stamp is for TWAMP Light; TWAMP Full negotiates its packets")
 	case cfg.STAMP && cfg.DSCPECNMonitoring:

@@ -49,6 +49,7 @@ func TestFullPreflightBeforeIO(t *testing.T) {
 		"negative read buffer":                   {func(c *Config, _ *FullConfig) { c.ReadBuffer = -1 }, 0},
 		"negative method error":                  {func(c *Config, _ *FullConfig) { c.MethodError = -1 }, 0},
 		"negative userspace error":               {func(c *Config, _ *FullConfig) { c.UserspaceError = -1 }, 0},
+		"dscp ecn monitoring":                    {func(c *Config, _ *FullConfig) { c.DSCPECNMonitoring = true }, 0},
 		"padding to reflect without the feature": {func(_ *Config, f *FullConfig) { f.PaddingToReflect = 1 }, client.StageRequest},
 		"octets to reflect without the feature":  {func(_ *Config, f *FullConfig) { f.OctetsToReflect = 1 }, client.StageRequest},
 		"padding too short in every mode": {func(c *Config, f *FullConfig) {
