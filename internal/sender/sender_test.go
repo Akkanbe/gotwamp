@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/netip"
 	"strings"
@@ -20,6 +21,39 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Count != 100 || cfg.Interval != 100*time.Millisecond || cfg.Timeout != 2*time.Second ||
 		cfg.Padding != 27 || cfg.TTL != 255 || cfg.Window != time.Minute || cfg.PaddingFill != PaddingAuto {
 		t.Errorf("DefaultConfig = %+v", cfg)
+	}
+}
+
+func TestNormalizeMappedEndpoints(t *testing.T) {
+	for _, tc := range []struct {
+		name, source, target, wantSource, wantTarget string
+	}{
+		{"mapped source", "[::ffff:127.0.0.1]:12345", "127.0.0.1:862", "127.0.0.1:12345", "127.0.0.1:862"},
+		{"mapped target", "127.0.0.1:12345", "[::ffff:127.0.0.1]:862", "127.0.0.1:12345", "127.0.0.1:862"},
+		{"both mapped", "[::ffff:127.0.0.1]:12345", "[::ffff:127.0.0.1]:862", "127.0.0.1:12345", "127.0.0.1:862"},
+		{"ipv6", "[::1]:12345", "[::1]:862", "[::1]:12345", "[::1]:862"},
+		{"mapped versus ipv6", "[::ffff:127.0.0.1]:0", "[::1]:862", "", ""},
+		{"ipv6 versus ipv4", "[::1]:0", "127.0.0.1:862", "", ""},
+	} {
+		for _, full := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/full=%v", tc.name, full), func(t *testing.T) {
+				cfg := DefaultConfig(netip.MustParseAddrPort(tc.target))
+				cfg.Source = netip.MustParseAddrPort(tc.source)
+				err := normalize(&cfg, full)
+				if tc.wantSource == "" {
+					if err == nil {
+						t.Errorf("accepted source %v and target %v", cfg.Source, cfg.Target)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if cfg.Source.String() != tc.wantSource || cfg.Target.String() != tc.wantTarget {
+					t.Errorf("source=%v target=%v", cfg.Source, cfg.Target)
+				}
+			})
+		}
 	}
 }
 

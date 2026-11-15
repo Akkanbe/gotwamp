@@ -182,9 +182,10 @@ type Server struct {
 	rejected uint64
 	serving  int // Serve calls running
 	ivs      ivHistory
-	// drainTimers joins detached session releases, including those already
-	// removed from sessions when shutdown starts.
-	drainTimers sync.WaitGroup
+
+	// draining counts the drain timers of closed connections that have not
+	// been stopped, including those already running release.
+	draining sync.WaitGroup
 }
 
 // New returns a server that opens test sessions through handler.
@@ -331,8 +332,10 @@ func (s *Server) shutdown() {
 	for _, ss := range sessions {
 		s.release(ss)
 	}
-	// All control workers have joined, so no new drain timer can be added.
-	s.drainTimers.Wait()
+	// A drain timer that fired has already taken its session out of
+	// s.sessions, but may still be closing it. Every connection has ended,
+	// so no new timer can start.
+	s.draining.Wait()
 }
 
 // Status returns the connection and session counts.
@@ -416,7 +419,7 @@ func (s *Server) release(ss *session) {
 	ss.released = true
 	delete(s.sessions, ss.info.SID)
 	if ss.timer != nil && ss.timer.Stop() {
-		s.drainTimers.Done()
+		s.draining.Done() // the timer will not run
 	}
 	s.mu.Unlock()
 	st := ss.h.Stats()

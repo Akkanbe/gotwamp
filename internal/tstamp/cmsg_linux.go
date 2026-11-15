@@ -33,7 +33,7 @@ const (
 // message followed by an IP_PKTINFO / IPV6_PKTINFO one, and the length of
 // the first: the whole buffer sets both, the tail the source address only.
 //
-//declscope:package // the send buffer Listen keeps in each Conn
+//declscope:shared // the send buffer Listen keeps in each Conn
 func newSourceCmsgs(v6 bool) (b []byte, tosLen int) {
 	var level, typ uint32 = unix.IPPROTO_IP, unix.IP_PKTINFO
 	size := in4PktinfoSize
@@ -49,7 +49,7 @@ func newSourceCmsgs(v6 bool) (b []byte, tosLen int) {
 // putSourceCmsg sets the source address of a PKTINFO control message made by
 // newSourceCmsgs; the interface index stays 0 so that the route picks it.
 //
-//declscope:package // WriteToFrom sets the source of each packet through it
+//declscope:shared // WriteToFrom sets the source of each packet through it
 func putSourceCmsg(b []byte, from netip.Addr) {
 	data := b[cmsgHdrLen:]
 	if from.Is4() {
@@ -66,7 +66,7 @@ func putSourceCmsg(b []byte, from netip.Addr) {
 // newTOSCmsg returns a buffer holding one IP_TOS (IPv4) or IPV6_TCLASS (IPv6)
 // control message with an int payload, which sendmsg accepts for both.
 //
-//declscope:package // the send buffer Listen keeps in each Conn
+//declscope:shared // the send buffer Listen keeps in each Conn
 func newTOSCmsg(v6 bool) []byte {
 	var level, typ uint32 = unix.IPPROTO_IP, unix.IP_TOS
 	if v6 {
@@ -79,7 +79,7 @@ func newTOSCmsg(v6 bool) []byte {
 
 // putTOSCmsg sets the payload of a buffer made by newTOSCmsg.
 //
-//declscope:package // WriteTo sets the per-packet TOS through it
+//declscope:shared // WriteTo sets the per-packet TOS through it
 func putTOSCmsg(b []byte, tos uint8) {
 	binary.NativeEndian.PutUint32(b[cmsgHdrLen:], uint32(tos))
 }
@@ -125,7 +125,7 @@ func nextCmsg(oob []byte) (level, typ uint32, data, rest []byte, ok bool) {
 // control messages of one recvmsg. Unknown messages are skipped; a malformed
 // one ends the walk.
 //
-//declscope:package // ReadFrom decodes every received datagram's cmsgs through it
+//declscope:shared // ReadFrom decodes every received datagram's cmsgs through it
 func parseRxCmsgs(oob []byte, meta *RxMeta) {
 	for {
 		level, typ, data, rest, ok := nextCmsg(oob)
@@ -210,7 +210,7 @@ func timespec(data []byte, size int) (time.Time, bool) {
 // SO_EE_ORIGIN_TIMESTAMPING, info SCM_TSTAMP_SND). It reports false for any
 // other message.
 //
-//declscope:package // ReadTxTimestamps decodes the error queue through it
+//declscope:shared // ReadTxTimestamps decodes the error queue through it
 func parseTxTimestamp(oob []byte) (id uint32, at time.Time, ok bool) {
 	var haveID, haveAt bool
 	for {

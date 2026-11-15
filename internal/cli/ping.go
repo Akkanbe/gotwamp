@@ -73,12 +73,12 @@ func (*seconds) Type() string { return "duration" }
 // newTestFlags returns the test parameter flags; call register to add
 // them to a command.
 //
-//declscope:package // session add and update take the same test flags
+//declscope:shared // session add and update take the same test flags
 func newTestFlags() *pingFlags { return &pingFlags{} }
 
 // newPingCommand returns "gotwamp ping".
 //
-//declscope:package // a subcommand of the root
+//declscope:shared // a subcommand of the root
 func newPingCommand(g *globals) *cobra.Command {
 	var pf pingFlags
 	cmd := &cobra.Command{
@@ -102,7 +102,7 @@ func newPingCommand(g *globals) *cobra.Command {
 
 // register adds the test parameter flags of SPEC §10.3 to f.
 //
-//declscope:package // session add takes the same flags
+//declscope:shared // session add takes the same flags
 func (pf *pingFlags) register(f *pflag.FlagSet) {
 	f.BoolVar(&pf.light, "light", false, "TWAMP Light (no TWAMP-Control)")
 	f.Uint32VarP(&pf.controlPort, "control-port", "p", 862, "TWAMP-Control port (Full)")
@@ -145,7 +145,7 @@ func (pf *pingFlags) register(f *pflag.FlagSet) {
 // set, so that the others, the count included, take gotwampd's defaults
 // (ADR 0005).
 //
-//declscope:package // session add builds its test the same way
+//declscope:shared // session add builds its test the same way
 func (pf *pingFlags) spec(fs *pflag.FlagSet, target string) (*gotwampv1.TestSpec, error) {
 	set := fs.Changed
 	s := &gotwampv1.TestSpec{Target: target, Mode: gotwampv1.Mode_MODE_FULL, SourceAddress: pf.source}

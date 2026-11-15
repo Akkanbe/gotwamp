@@ -18,7 +18,7 @@ import (
 // newSessionCommand returns "gotwamp session" and its subcommands (SPEC
 // §10.2).
 //
-//declscope:package // a subcommand of the root
+//declscope:shared // a subcommand of the root
 func newSessionCommand(g *globals) *cobra.Command {
 	cmd := &cobra.Command{Use: "session", Short: "Manage the monitoring sessions of gotwampd"}
 	cmd.AddCommand(
@@ -82,7 +82,7 @@ func newSessionCommand(g *globals) *cobra.Command {
 
 // call runs f with a SenderService client and the RPC timeout.
 //
-//declscope:package // the result commands talk to the SenderService too
+//declscope:shared // the result commands talk to the SenderService too
 func (g *globals) call(cmd *cobra.Command, f func(context.Context, gotwampv1.SenderServiceClient) error) error {
 	conn, err := g.conn()
 	if err != nil {

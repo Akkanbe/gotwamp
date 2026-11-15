@@ -93,7 +93,7 @@ func checkTestSpecShape(s *gotwampv1.TestSpec) error {
 // configuration and plans it, without touching the network: the target is
 // resolved afterwards. Every failure is an InvalidArgument status.
 //
-//declscope:package // RunTest validates requests with it
+//declscope:shared // RunTest validates requests with it
 func checkTestRequest(cfg *config.Config, keys keystore.Store, spec *gotwampv1.TestSpec) (testPlan, config.TestParams, error) {
 	if spec == nil {
 		return testPlan{}, config.TestParams{}, invalid("spec is required")
@@ -123,7 +123,7 @@ func checkTestRequest(cfg *config.Config, keys keystore.Store, spec *gotwampv1.T
 // checkSessionRequest validates a session definition of the API against
 // the daemon's configuration and builds its scheduler definition.
 //
-//declscope:package // CreateSession and UpdateSession validate requests with it
+//declscope:shared // CreateSession and UpdateSession validate requests with it
 func checkSessionRequest(cfg *config.Config, keys keystore.Store, ps *gotwampv1.SessionSpec) (schedule.SessionSpec, error) {
 	if ps == nil || ps.GetSpec() == nil {
 		return schedule.SessionSpec{}, invalid("spec and spec.spec are required")
@@ -158,7 +158,7 @@ func checkSessionRequest(cfg *config.Config, keys keystore.Store, ps *gotwampv1.
 
 // checkName validates the session name of a request.
 //
-//declscope:package // every session RPC checks its name
+//declscope:shared // every session RPC checks its name
 func checkName(name string) error {
 	if !config.ValidName(name) {
 		return invalid("session name %q does not match [a-z0-9][a-z0-9_-]{0,62}", name)
@@ -168,7 +168,7 @@ func checkName(name string) error {
 
 // checkRunID validates the run ID of StopTest.
 //
-//declscope:package // StopTest checks its run ID
+//declscope:shared // StopTest checks its run ID
 func checkRunID(id string) error {
 	if id == "" || len(id) > maxRunIDLength {
 		return invalid("run_id must be 1-%d characters", maxRunIDLength)
@@ -178,7 +178,7 @@ func checkRunID(id string) error {
 
 // checkWatch validates a WatchResults request.
 //
-//declscope:package // WatchResults checks its request
+//declscope:shared // WatchResults checks its request
 func checkWatch(req *gotwampv1.WatchResultsRequest) error {
 	if n := len(req.GetSessions()); n > maxWatchNames {
 		return invalid("%d sessions exceed the limit of %d", n, maxWatchNames)
@@ -193,7 +193,7 @@ func checkWatch(req *gotwampv1.WatchResultsRequest) error {
 
 // checkSince validates the since field of GetSessionStats.
 //
-//declscope:package // GetSessionStats checks its request
+//declscope:shared // GetSessionStats checks its request
 func checkSince(t *timestamppb.Timestamp) error {
 	if t == nil {
 		return nil
@@ -206,7 +206,7 @@ func checkSince(t *timestamppb.Timestamp) error {
 
 // checkReflectorKind validates the kind of ListReflectorSessions.
 //
-//declscope:package // ListReflectorSessions checks its request
+//declscope:shared // ListReflectorSessions checks its request
 func checkReflectorKind(k gotwampv1.ReflectorKind) error {
 	if !knownEnum(k) {
 		return invalid("kind: unknown value %d", k)

@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"strings"
 	"sync"
+	"time"
 
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -15,6 +16,7 @@ import (
 	gotwampv1 "github.com/Akkanbe/gotwamp/internal/api/gen/gotwamp/v1"
 	"github.com/Akkanbe/gotwamp/internal/config"
 	"github.com/Akkanbe/gotwamp/internal/control/keystore"
+	"github.com/Akkanbe/gotwamp/internal/control/server"
 	"github.com/Akkanbe/gotwamp/internal/export/prom"
 	"github.com/Akkanbe/gotwamp/internal/reflector"
 	"github.com/Akkanbe/gotwamp/internal/tstamp"
@@ -25,7 +27,7 @@ import (
 // server with its Full Session-Reflector. It serves the ReflectorService. A
 // nil *reflectors is a disabled role.
 //
-//declscope:package // Start builds it; the daemon service and the exporter read it
+//declscope:shared // Start builds it; the daemon service and the exporter read it
 type reflectors struct {
 	gotwampv1.UnimplementedReflectorServiceServer
 	// disabled marks the service of a daemon without the reflector role.
@@ -35,13 +37,17 @@ type reflectors struct {
 	//declscope:private
 	light *reflector.Light
 	//declscope:private
-	full *reflector.FullService
+	full *reflector.Full
+	//declscope:private
+	control *server.Server
+	//declscope:private
+	controlLns []net.Listener
 }
 
 // startReflectors binds every listener of the reflector role. Call serve to
 // start reflecting.
 //
-//declscope:package // Start builds the reflector role with it
+//declscope:shared // Start builds the reflector role with it
 func startReflectors(cfg *config.Config, keys keystore.Store, open *socketOpener, clockState reflector.ClockState, log *slog.Logger) (*reflectors, error) {
 	r := &reflectors{}
 	lcfg, err := lightConfig(cfg)
@@ -66,58 +72,74 @@ func startReflectors(cfg *config.Config, keys keystore.Store, open *socketOpener
 	case "none":
 		verify = reflector.VerifyNone
 	}
-	fcfg, err := controlConfig(c, keys)
+	r.full, err = reflector.NewFull(reflector.FullConfig{
+		VerifySender:   verify,
+		TTL:            cfg.Reflector.TTL,
+		MaxPacketSize:  cfg.Reflector.MaxPacketSize,
+		Timestamping:   timestampingMode(cfg.Daemon.Timestamping),
+		UserspaceError: cfg.Daemon.Clock.UserspaceError,
+		KernelError:    cfg.Daemon.Clock.KernelError,
+	}, reflector.Deps{Listen: open.listen, Clock: clockState, Logger: log.With("component", "full")})
 	if err != nil {
 		r.close()
 		return nil, err
 	}
-	fcfg.VerifySender = verify
-	fcfg.TTL = cfg.Reflector.TTL
-	fcfg.MaxPacketSize = cfg.Reflector.MaxPacketSize
-	fcfg.Timestamping = timestampingMode(cfg.Daemon.Timestamping)
-	fcfg.UserspaceError = cfg.Daemon.Clock.UserspaceError
-	fcfg.KernelError = cfg.Daemon.Clock.KernelError
+	scfg, err := controlConfig(c, keys)
+	if err != nil {
+		r.close()
+		return nil, err
+	}
+	if r.control, err = server.New(scfg, r.full, log.With("component", "control")); err != nil {
+		r.close()
+		return nil, err
+	}
 	for _, s := range c.Listen {
 		ap, err := config.ParseAddrPort(s)
 		if err != nil {
 			r.close()
 			return nil, fmt.Errorf("reflector.control.listen: %w", err)
 		}
-		fcfg.Listeners = append(fcfg.Listeners, ap)
-	}
-	r.full, err = reflector.ListenFull(fcfg, reflector.Deps{
-		Listen: open.listen, Clock: clockState, Logger: log.With("component", "full"),
-		ControlLogger: log.With("component", "control"),
-		ListenControl: listenControl,
-	})
-	if err != nil {
-		r.close()
-		return nil, err
+		network := "tcp6"
+		if ap.Addr().Is4() {
+			network = "tcp4"
+		}
+		ln, err := listenControl(network, ap)
+		if err != nil {
+			r.close()
+			return nil, fmt.Errorf("twamp-control listen %v: %w", ap, err)
+		}
+		r.controlLns = append(r.controlLns, ln)
 	}
 	log.Info("TWAMP-Control server listening", "addresses", r.controlAddrs(), "modes", c.OfferedModes(), "extensions", c.Extensions)
 	return r, nil
 }
 
-// listenControl retains the daemon's keepalive check over the shared listener.
+// controlKeepAlive is the TCP keepalive of the accepted control
+// connections, as the Client's (SPEC §5.1, the Junos defaults).
+var controlKeepAlive = net.KeepAliveConfig{Enable: true, Idle: 120 * time.Second, Interval: 5 * time.Second, Count: 6}
+
+// listenControl binds a TWAMP-Control listener; the connections it accepts
+// keep controlKeepAlive.
 func listenControl(network string, ap netip.AddrPort) (net.Listener, error) {
-	return reflector.ListenControl(network, ap)
+	lc := net.ListenConfig{KeepAliveConfig: controlKeepAlive}
+	return lc.Listen(context.Background(), network, ap.String())
 }
 
 // controlConfig translates reflector.control; keys are its keys file, nil
 // without one.
-func controlConfig(c config.ControlServer, keys keystore.Store) (reflector.FullConfig, error) {
+func controlConfig(c config.ControlServer, keys keystore.Store) (server.Config, error) {
 	ports, err := config.ParsePortRange(c.TestPortRange)
 	if err != nil {
-		return reflector.FullConfig{}, err
+		return server.Config{}, err
 	}
-	out := reflector.FullConfig{
+	out := server.Config{
 		MaxConnections:           c.MaxConnections,
 		MaxSessionsPerConnection: c.MaxSessionsPerConnection,
 		MaxSessions:              c.MaxSessions,
 		ServWait:                 c.ServWait,
 		RefWait:                  c.RefWait,
 		PartialMessageTimeout:    c.PartialMessageTimeout,
-		TestPorts:                reflector.PortRange{Low: ports.First, High: ports.Last},
+		TestPorts:                server.PortRange{Low: ports.First, High: ports.Last},
 		IgnoreRequestedPort:      !c.HonorRequestedPort,
 		MaxPadding:               uint32(max(c.MaxPadding, 0)),  //nolint:gosec // G115: validated to 0-65507
 		Count:                    uint32(max(c.PBKDF2Count, 0)), //nolint:gosec // G115: validated to 1024-32768
@@ -125,12 +147,12 @@ func controlConfig(c config.ControlServer, keys keystore.Store) (reflector.FullC
 	}
 	if keys != nil {
 		// A nil Store in the interface would read as a configured one.
-		out.Credentials = keys
+		out.Keys = keys
 	}
 	for _, s := range c.ACL {
 		p, err := config.ParsePrefix(s)
 		if err != nil {
-			return reflector.FullConfig{}, fmt.Errorf("reflector.control.acl: %w", err)
+			return server.Config{}, fmt.Errorf("reflector.control.acl: %w", err)
 		}
 		out.ACL = append(out.ACL, p)
 	}
@@ -180,7 +202,7 @@ func lightConfig(cfg *config.Config) (reflector.Config, error) {
 
 // serve reflects until ctx is done, reporting failures to fail.
 //
-//declscope:package // Start serves the reflector role with it
+//declscope:shared // Start serves the reflector role with it
 func (r *reflectors) serve(ctx context.Context, wg *sync.WaitGroup, fail func(error)) {
 	if r == nil {
 		return
@@ -192,10 +214,10 @@ func (r *reflectors) serve(ctx context.Context, wg *sync.WaitGroup, fail func(er
 			}
 		})
 	}
-	if r.full != nil {
+	for _, ln := range r.controlLns {
 		wg.Go(func() {
-			if err := r.full.Serve(ctx); err != nil {
-				fail(fmt.Errorf("twamp-control: %w", err))
+			if err := r.control.Serve(ctx, ln); err != nil {
+				fail(fmt.Errorf("twamp-control %v: %w", ln.Addr(), err))
 			}
 		})
 	}
@@ -203,7 +225,7 @@ func (r *reflectors) serve(ctx context.Context, wg *sync.WaitGroup, fail func(er
 
 // close releases the sockets of a reflector role that will not be served.
 //
-//declscope:package // Start releases them when a later step fails
+//declscope:shared // Start releases them when a later step fails
 func (r *reflectors) close() {
 	if r == nil {
 		return
@@ -211,14 +233,14 @@ func (r *reflectors) close() {
 	if r.light != nil {
 		_ = r.light.Close()
 	}
-	if r.full != nil {
-		_ = r.full.Close()
+	for _, ln := range r.controlLns {
+		_ = ln.Close()
 	}
 }
 
 // lightAddrs returns the bound addresses of the Light reflector.
 //
-//declscope:package // Daemon.LightAddrs reports them
+//declscope:shared // Daemon.LightAddrs reports them
 func (r *reflectors) lightAddrs() []netip.AddrPort {
 	if r == nil || r.light == nil {
 		return nil
@@ -228,18 +250,22 @@ func (r *reflectors) lightAddrs() []netip.AddrPort {
 
 // controlAddrs returns the bound addresses of the TWAMP-Control server.
 //
-//declscope:package // Daemon.ControlAddrs reports them
+//declscope:shared // Daemon.ControlAddrs reports them
 func (r *reflectors) controlAddrs() []netip.AddrPort {
-	if r == nil || r.full == nil {
+	if r == nil {
 		return nil
 	}
-	return r.full.Addrs()
+	out := make([]netip.AddrPort, len(r.controlLns))
+	for i, ln := range r.controlLns {
+		out[i] = ln.Addr().(*net.TCPAddr).AddrPort()
+	}
+	return out
 }
 
 // timestamping returns the timestamping mode of the reflector's sockets,
 // or false when no socket reports one.
 //
-//declscope:package // GetStatus and the exporter report it
+//declscope:shared // GetStatus and the exporter report it
 func (r *reflectors) timestamping() (tstamp.Mode, bool) {
 	if r == nil || r.light == nil {
 		return 0, false
@@ -257,7 +283,7 @@ func (r *reflectors) timestamping() (tstamp.Mode, bool) {
 // wildcard address on daemon.hardware_interface, iface, since the loopback
 // device has no card.
 //
-//declscope:package // Start reports it in GetStatus and the metrics
+//declscope:shared // Start reports it in GetStatus and the metrics
 func timestampingInEffect(r *reflectors, configured, iface string) tstamp.Mode {
 	if m, ok := r.timestamping(); ok {
 		return m
@@ -300,17 +326,16 @@ func (r *reflectors) GetReflectorStatus(context.Context, *gotwampv1.GetReflector
 		resp.LightFlowsOverflow = st.FlowsOverflow
 		resp.Counters = append(resp.Counters, protoCounters(gotwampv1.ReflectorKind_REFLECTOR_KIND_LIGHT, st.Counters))
 	}
-	if r.full != nil {
-		fullStatus := r.full.Status()
-		for _, a := range fullStatus.Listeners {
+	if r.control != nil {
+		for _, a := range r.controlAddrs() {
 			resp.Listeners = append(resp.Listeners, &gotwampv1.ReflectorListener{Kind: gotwampv1.ReflectorKind_REFLECTOR_KIND_FULL, Address: a.String()})
 		}
-		st := fullStatus.Control
+		st := r.control.Status()
 		resp.ControlConnectionsActive = count32(st.ConnectionsActive)
 		resp.ControlConnectionsAccepted = st.ConnectionsAccepted
 		resp.ControlConnectionsRejected = st.ConnectionsRejected
 		resp.FullSessionsActive = count32(st.SessionsActive)
-		resp.Counters = append(resp.Counters, protoCounters(gotwampv1.ReflectorKind_REFLECTOR_KIND_FULL, fullStatus.Counters))
+		resp.Counters = append(resp.Counters, protoCounters(gotwampv1.ReflectorKind_REFLECTOR_KIND_FULL, r.full.Counters()))
 	}
 	return resp, nil
 }
@@ -319,7 +344,7 @@ func (r *reflectors) enabled() bool { return r != nil && !r.disabled }
 
 // reflectorService returns the ReflectorService of r, which may be nil.
 //
-//declscope:package // Start registers it
+//declscope:shared // Start registers it
 func reflectorService(r *reflectors) *reflectors {
 	if r == nil {
 		return &reflectors{disabled: true}
@@ -351,8 +376,8 @@ func (r *reflectors) ListReflectorSessions(_ context.Context, req *gotwampv1.Lis
 		return resp, nil
 	}
 	kind := req.GetKind()
-	if r.full != nil && kind != gotwampv1.ReflectorKind_REFLECTOR_KIND_LIGHT {
-		for _, s := range r.full.Sessions() {
+	if r.control != nil && kind != gotwampv1.ReflectorKind_REFLECTOR_KIND_LIGHT {
+		for _, s := range r.control.Sessions() {
 			resp.FullSessions = append(resp.FullSessions, &gotwampv1.FullReflectorSession{
 				Sid:              s.SID[:],
 				ControlPeer:      protoEndpoint(s.ControlPeer),
@@ -404,7 +429,7 @@ func sessionSecurity(m wire.SecurityMode) gotwampv1.SecurityMode {
 
 // snapshot reports the reflector counters to the Prometheus exporter.
 //
-//declscope:package // Start hands it to the exporter
+//declscope:shared // Start hands it to the exporter
 func (r *reflectors) snapshot() prom.ReflectorSnapshot {
 	var s prom.ReflectorSnapshot
 	if r == nil {
@@ -425,18 +450,17 @@ func (r *reflectors) snapshot() prom.ReflectorSnapshot {
 		s.SessionsActive["light"] = st.FlowsActive
 		s.LightFlowsOverflow = st.FlowsOverflow
 	}
-	if r.full != nil {
-		fullStatus := r.full.Status()
-		c := fullStatus.Counters
+	if r.control != nil {
+		c := r.full.Counters()
 		// Full sessions have their own sockets; their counters are summed
 		// under the control listeners' addresses (B28).
-		addrs := make([]string, 0, len(fullStatus.Listeners))
-		for _, a := range fullStatus.Listeners {
+		addrs := make([]string, 0, len(r.controlLns))
+		for _, a := range r.controlAddrs() {
 			addrs = append(addrs, a.String())
 		}
 		s.Listeners = append(s.Listeners, prom.ReflectorListener{Kind: "full", Listener: strings.Join(addrs, ","), Received: c.Received, Reflected: c.Reflected})
 		drops("full", c)
-		st := fullStatus.Control
+		st := r.control.Status()
 		s.ControlConnectionsActive = st.ConnectionsActive
 		s.ControlConnections = map[string]uint64{"accepted": st.ConnectionsAccepted, "rejected": st.ConnectionsRejected}
 		s.SessionsActive["full"] = st.SessionsActive
@@ -446,14 +470,14 @@ func (r *reflectors) snapshot() prom.ReflectorSnapshot {
 
 // protoEndpoint converts an address and UDP port.
 //
-//declscope:package // the sender service reports endpoints too
+//declscope:shared // the sender service reports endpoints too
 func protoEndpoint(ap netip.AddrPort) *gotwampv1.Endpoint {
 	return &gotwampv1.Endpoint{Address: ap.Addr().String(), Port: uint32(ap.Port())}
 }
 
 // timestampingMode parses daemon.timestamping.
 //
-//declscope:package // test plans use the same mode
+//declscope:shared // test plans use the same mode
 func timestampingMode(s string) tstamp.Mode {
 	switch s {
 	case "hardware":

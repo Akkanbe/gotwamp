@@ -35,16 +35,18 @@ const readErrorLogEvery = time.Minute
 // logs the first at once and later ones at most once per readErrorLogEvery,
 // with how many it left out, then backs off.
 //
-//declscope:package // the Light and Full read loops keep one each
+//declscope:shared // the Light and Full read loops keep one each
 type readErrors struct {
-	log     *slog.Logger
-	last    time.Time
+	log *slog.Logger
+	//declscope:private
+	last time.Time
+	//declscope:private
 	skipped int
 }
 
 // failed reports err with attrs and waits readErrorBackoff.
 //
-//declscope:package // the Light and Full read loops call it
+//declscope:shared // the Light and Full read loops call it
 func (r *readErrors) failed(msg string, err error, attrs ...any) {
 	if now := time.Now(); r.last.IsZero() || now.Sub(r.last) >= readErrorLogEvery {
 		r.log.Warn(msg, append(attrs, "err", err, "suppressed", r.skipped)...)
@@ -61,7 +63,7 @@ type ClockState func() (synchronized bool, maxErr time.Duration)
 
 // estimator caches the reflector's Error Estimate for one goroutine.
 //
-//declscope:package // one per listener goroutine of light.go
+//declscope:shared // one per listener goroutine of light.go
 type estimator struct {
 	clock       ClockState
 	methodError time.Duration
@@ -80,7 +82,7 @@ type estimator struct {
 // the kernel's, but T3 is always taken in user space right before sendmsg,
 // so the larger error applies (SPEC §8.2).
 //
-//declscope:package // the Light and Full reflectors build their estimators with it
+//declscope:shared // the Light and Full reflectors build their estimators with it
 func reflectorMethodError(userspace, kernel time.Duration) time.Duration {
 	return max(userspace, kernel)
 }
@@ -88,7 +90,7 @@ func reflectorMethodError(userspace, kernel time.Duration) time.Duration {
 // estimate returns the Error Estimate at now (SPEC §8.4), recomputing it at
 // most once per estimateRefresh. Without a clock it is errest.Unknown.
 //
-//declscope:package // called per packet by light.go
+//declscope:shared // called per packet by light.go
 func (e *estimator) estimate(now time.Time) errest.Estimate {
 	if e.clock == nil {
 		return errest.Unknown
@@ -103,7 +105,7 @@ func (e *estimator) estimate(now time.Time) errest.Estimate {
 
 // replyFormat selects the layout of a reply.
 //
-//declscope:package // the Light and Full reflectors choose it per listener or session
+//declscope:shared // the Light and Full reflectors choose it per listener or session
 type replyFormat struct {
 	// dscpecn takes the RFC 7750 layout: the S-DSCP-ECN octet at offset 41
 	// (or 81 when authenticated) carries the DSCP and ECN of the received
@@ -124,7 +126,7 @@ type replyFormat struct {
 // (44 with dscpecn or stamp). The caller has checked n against the length
 // limits; b must hold at least 44 octets.
 //
-//declscope:package // shared by the Light and Full reflectors
+//declscope:shared // shared by the Light and Full reflectors
 func buildReply(b []byte, n int, seq uint32, ee errest.Estimate, rx tstamp.RxMeta, f replyFormat) (int, error) {
 	p := wire.ReflectorPacket{
 		Seq:              seq,
@@ -151,10 +153,11 @@ func buildReply(b []byte, n int, seq uint32, ee errest.Estimate, rx tstamp.RxMet
 // It keeps the plaintext header, so that a retry can take T3 again and seal
 // anew: in encrypted mode T3 lies under the HMAC and the cipher.
 //
-//declscope:package // the Full reflector builds one per session; sendReply uses it
+//declscope:shared // the Full reflector builds one per session; sendReply uses it
 type replySealer struct {
 	crypto *wire.TestCrypto
-	plain  [wire.AuthReflectorHeaderSize]byte
+	//declscope:private
+	plain [wire.AuthReflectorHeaderSize]byte
 }
 
 // stamp writes T3 into the plaintext header, then the HMAC, and encrypts.
@@ -167,7 +170,7 @@ func (r *replySealer) stamp(reply []byte, t3 ntptime.Timestamp) error {
 // senderTTL returns the Sender TTL of a reply: the received TTL or Hop
 // Limit, 255 when the socket could not read it (RFC 5357 §4.2.1 MUST).
 //
-//declscope:package // the unauthenticated and authenticated replies share it
+//declscope:shared // the unauthenticated and authenticated replies share it
 func senderTTL(rx tstamp.RxMeta) uint8 {
 	if rx.TTL >= 0 && rx.TTL <= 255 {
 		return uint8(rx.TTL)
@@ -183,7 +186,7 @@ func senderTTL(rx tstamp.RxMeta) uint8 {
 // reply come from where it sent (SPEC §6.1). It needs a tstamp.SourceWriter;
 // other sockets let the route choose.
 //
-//declscope:package // shared by the Light and Full reflectors
+//declscope:shared // shared by the Light and Full reflectors
 func sendReply(conn tstamp.Conn, reply []byte, to netip.AddrPort, from netip.Addr, tos int, sealer *replySealer) error {
 	sw, fromOK := conn.(tstamp.SourceWriter)
 	fromOK = fromOK && from.IsValid()

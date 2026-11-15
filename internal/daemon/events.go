@@ -21,7 +21,7 @@ import (
 // packetEvent converts a reply into a TestEvent. Strays and late replies,
 // which belong to no outstanding packet, yield nil.
 //
-//declscope:package // RunTest streams every reply through it
+//declscope:shared // RunTest streams every reply through it
 func packetEvent(r sender.PacketResult) *gotwampv1.TestEvent {
 	var kind gotwampv1.DuplicateKind
 	switch r.Result.Kind {
@@ -85,7 +85,7 @@ func protoErrest(e errest.Estimate) *gotwampv1.ErrorEstimate {
 // runSummary converts the summary of a run or window. session is empty for
 // an ad-hoc test; sid is nil for Light.
 //
-//declscope:package // RunTest streams the summary through it
+//declscope:shared // RunTest streams the summary through it
 func runSummary(s sender.Summary, session, runID string, spec *gotwampv1.TestSpec, sid []byte, kind gotwampv1.SummaryKind) *gotwampv1.RunSummary {
 	j := s.Jitter
 	if sid == nil && s.SID != (wire.SID{}) {
@@ -191,12 +191,12 @@ func clamp32(v uint64) uint32 { return uint32(min(v, math.MaxUint32)) }
 
 // count32 converts a non-negative count.
 //
-//declscope:package // the reflector service reports counts too
+//declscope:shared // the reflector service reports counts too
 func count32(n int) uint32 { return uint32(min(max(n, 0), math.MaxUint32)) } //nolint:gosec // G115: clamped
 
 // optTimestamp converts t, leaving a zero time unset.
 //
-//declscope:package // the reflector service reports times too
+//declscope:shared // the reflector service reports times too
 func optTimestamp(t time.Time) *timestamppb.Timestamp {
 	if t.IsZero() {
 		return nil
@@ -206,7 +206,7 @@ func optTimestamp(t time.Time) *timestamppb.Timestamp {
 
 // runError converts a run failure; stage is a client.Stage name.
 //
-//declscope:package // RunTest reports failures through it
+//declscope:shared // RunTest reports failures through it
 func runError(stage, message string, accept int) *gotwampv1.TestEvent {
 	st := gotwampv1.RunStage(gotwampv1.RunStage_value["RUN_STAGE_"+strings.ToUpper(stage)])
 	return &gotwampv1.TestEvent{Event: &gotwampv1.TestEvent_Error{Error: &gotwampv1.RunError{
@@ -218,7 +218,7 @@ func runError(stage, message string, accept int) *gotwampv1.TestEvent {
 // A summary reports the TestSpec of the session definition the event was
 // published under (eventSpec). Skipped runs have no event and yield nil.
 //
-//declscope:package // WatchResults streams the store's events through it
+//declscope:shared // WatchResults streams the store's events through it
 func storeEvent(e store.Event) *gotwampv1.TestEvent {
 	var ev *gotwampv1.TestEvent
 	switch e.Kind {
@@ -255,7 +255,7 @@ func eventSpec(info *store.SessionInfo) *gotwampv1.TestSpec {
 
 // protoTimestamping converts a socket's timestamping mode.
 //
-//declscope:package // the daemon service reports modes too
+//declscope:shared // the daemon service reports modes too
 func protoTimestamping(m tstamp.Mode) gotwampv1.TimestampingMode {
 	switch m {
 	case tstamp.ModeKernel:

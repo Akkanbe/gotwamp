@@ -24,7 +24,7 @@ PROTOC_GEN_GO_GRPC_VERSION ?= v1.6.2
 GOFUMPT_VERSION            ?= v0.12.0
 GOLANGCI_LINT_VERSION      ?= v2.14.0
 GOVULNCHECK_VERSION        ?= v1.8.0
-DECLSCOPE_VERSION          ?= v0.14.0
+DECLSCOPE_VERSION          ?= v0.24.1
 
 # The docker compose staging (deploy/staging, docs/ops/staging.md).
 STAGING      := docker compose -f deploy/staging/docker-compose.yml
@@ -43,12 +43,8 @@ build: ## Build all packages and the binaries into bin/
 	$(foreach c,$(COMMANDS),CGO_ENABLED=0 $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $(BIN_DIR)/$(c) ./cmd/$(c) &&) true
 
 .PHONY: test
-test: test-library ## Run the tests with the race detector
+test: ## Run the tests with the race detector
 	CGO_ENABLED=1 $(GO) test $(RACE) ./...
-
-.PHONY: test-library
-test-library: ## Test embedding from an independent Go module
-	cd test/library && CGO_ENABLED=1 $(GO) test $(RACE) ./...
 
 # Soak test (test/soak): SOAK_SESSIONS sessions at SOAK_PPS packets per second
 # for SOAK_DURATION. The 24-hour M5 run: make soak SOAK_SESSIONS=100 SOAK_DURATION=24h
@@ -79,7 +75,7 @@ interop: ## Run the perfSONAR interop tests in Docker (INTEROP_CLI=1: also the C
 	exit $$rc
 
 .PHONY: cover
-cover: test-library ## Run the tests with coverage and print the per-function summary
+cover: ## Run the tests with coverage and print the per-function summary
 	CGO_ENABLED=1 $(GO) test $(RACE) -coverprofile=coverage.out ./...
 	$(GO) tool cover -func=coverage.out | tail -n 1
 
@@ -183,6 +179,6 @@ tools: ## Install the development tools into GOBIN
 	$(GO) install mvdan.cc/gofumpt@$(GOFUMPT_VERSION)
 	$(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 	$(GO) install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
-	# declscope v0.14.0 declares go 1.27.0, so building it needs a Go 1.27
+	# declscope v0.24.1 declares go 1.27.0, so building it needs a Go 1.27
 	# toolchain; let go fetch one for this install only (go.mod is unaffected).
 	GOTOOLCHAIN=auto $(GO) install github.com/mpyw/declscope/cmd/declscope@$(DECLSCOPE_VERSION)

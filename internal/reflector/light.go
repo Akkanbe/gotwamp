@@ -32,11 +32,6 @@ const (
 
 // Deps are the collaborators of the Light reflector.
 type Deps struct {
-	// ListenControl opens a TCP control listener; nil uses ListenControl.
-	ListenControl func(network string, local netip.AddrPort) (net.Listener, error)
-	// ControlLogger receives control server messages; nil uses Logger.
-	ControlLogger *slog.Logger
-
 	// Listen opens a UDP socket; nil means tstamp.Listen.
 	Listen func(network string, local netip.AddrPort, opts tstamp.Options) (tstamp.Conn, error)
 	// Clock reports the clock state for the Error Estimate; nil sends
@@ -85,7 +80,15 @@ type Light struct {
 	acl       []netip.Prefix
 	hook      Hook
 
-	life serviceLife
+	// mu guards the lifecycle fields below it.
+	mu      sync.Mutex
+	serving bool               // Serve has been called
+	closed  bool               // Close has been called
+	stop    context.CancelFunc // ends a running Serve; nil before Serve
+	served  chan struct{}      // closed when Serve returns; nil before Serve
+
+	closeOnce sync.Once
+	closeErr  error
 }
 
 // listener is one bound socket and its counters.
@@ -161,41 +164,69 @@ func (l *Light) Addrs() []netip.AddrPort {
 	return out
 }
 
-// Serve reflects packets until ctx is done or Close is called. It may be
-// called once; after Close it returns an error without starting workers.
+// Serve reflects packets until ctx is done or Close is called, then closes
+// the listeners and returns. It may be called once, and not after Close.
 func (l *Light) Serve(ctx context.Context) error {
-	ctx, finish, err := l.life.begin(ctx)
-	if err != nil {
-		return fmt.Errorf("light reflector: %w", err)
+	ctx, stop := context.WithCancel(ctx)
+	defer stop()
+	l.mu.Lock()
+	switch {
+	case l.serving:
+		l.mu.Unlock()
+		return errors.New("light reflector: Serve called twice")
+	case l.closed:
+		l.mu.Unlock()
+		return errors.New("light reflector: Serve called after Close")
 	}
-	defer finish()
+	served := make(chan struct{})
+	l.serving, l.stop, l.served = true, stop, served
+	l.mu.Unlock()
+	defer close(served)
+
 	var wg sync.WaitGroup
 	for _, ln := range l.listeners {
 		wg.Go(func() { l.serveListener(ln) })
 	}
 	wg.Go(func() { l.sweep(ctx) })
+
 	<-ctx.Done()
-	err = l.life.shutdown(l.closeSockets)
+	err := l.closeListeners()
 	wg.Wait()
 	return err
 }
 
-// Close closes every listener and waits for all serving workers to stop.
-// It is safe before Serve and may be called concurrently or repeatedly.
+// Close closes every listener and, when Serve is running, ends it and waits
+// for it to return. It may be called before Serve, more than once and
+// concurrently, but not from a Hook: Serve waits for the goroutine that runs
+// the Hook.
 func (l *Light) Close() error {
-	err := l.life.shutdown(l.closeSockets)
-	l.life.wait()
+	l.mu.Lock()
+	l.closed = true
+	stop, served := l.stop, l.served
+	l.mu.Unlock()
+	if stop != nil {
+		stop()
+	}
+	err := l.closeListeners()
+	if served != nil {
+		<-served
+	}
 	return err
 }
 
-func (l *Light) closeSockets() error {
-	var errs []error
-	for _, ln := range l.listeners {
-		if err := ln.conn.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
-			errs = append(errs, fmt.Errorf("light reflector: close %v: %w", ln.addr, err))
+// closeListeners closes every listener socket once, and returns the same
+// result on later calls.
+func (l *Light) closeListeners() error {
+	l.closeOnce.Do(func() {
+		var errs []error
+		for _, ln := range l.listeners {
+			if err := ln.conn.Close(); err != nil {
+				errs = append(errs, fmt.Errorf("light reflector: close %v: %w", ln.addr, err))
+			}
 		}
-	}
-	return errors.Join(errs...)
+		l.closeErr = errors.Join(errs...)
+	})
+	return l.closeErr
 }
 
 // Status returns the counters and flow counts.

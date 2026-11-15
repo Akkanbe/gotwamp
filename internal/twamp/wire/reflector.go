@@ -79,7 +79,7 @@ func (p *ReflectorPacket) Append(dst []byte) []byte {
 
 // putHeader writes the header of the layout p uses into b.
 //
-//declscope:package // ReflectSTAMP writes the fields STAMP shares with TWAMP through it
+//declscope:shared // ReflectSTAMP writes the fields STAMP shares with TWAMP through it
 func (p *ReflectorPacket) putHeader(b []byte) {
 	binary.BigEndian.PutUint32(b[0:], p.Seq)
 	binary.BigEndian.PutUint64(b[4:], uint64(p.Timestamp))

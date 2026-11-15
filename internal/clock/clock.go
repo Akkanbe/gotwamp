@@ -20,7 +20,7 @@ import (
 // 16 s): the value of maxerror once no time source has updated the clock for a
 // while. Status also reports it when the clock state cannot be read.
 //
-//declscope:package // the kernel reader (adjtimex_linux.go) clamps maxerror to it
+//declscope:shared // the kernel reader (adjtimex_linux.go) clamps maxerror to it
 const maxErrorLimit = 16 * time.Second
 
 // pollInterval is how often the kernel state is read.
@@ -30,8 +30,6 @@ const pollInterval = time.Second
 type Sync uint8
 
 // The values of Sync, as ParseSync returns them.
-//
-//declscope:ignore overexported // an enum: its values document the type the daemon takes through ParseSync
 const (
 	// SyncAuto reads the state from the kernel.
 	SyncAuto Sync = iota
@@ -82,7 +80,7 @@ type Config struct {
 
 // source reads the kernel clock state.
 //
-//declscope:package // the hook each platform file implements, and tests replace
+//declscope:shared // the hook each platform file implements, and tests replace
 type source interface {
 	read() (synced bool, maxErr time.Duration, err error)
 }

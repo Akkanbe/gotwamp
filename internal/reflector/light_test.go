@@ -23,7 +23,7 @@ import (
 
 // rxPacket is a datagram the fake socket hands to ReadFrom, or an error.
 //
-//declscope:package // shared by the Light and Full tests
+//declscope:shared // shared by the Light and Full tests
 type rxPacket struct {
 	b    []byte
 	from netip.AddrPort
@@ -33,12 +33,14 @@ type rxPacket struct {
 
 // txPacket is a datagram written through the fake socket.
 //
-//declscope:package // shared by the Light and Full tests
+//declscope:shared // shared by the Light and Full tests
 type txPacket struct {
 	b   []byte
 	to  netip.AddrPort
 	tos int
 	// src is the source address given to WriteToFrom; zero for WriteTo.
+	//
+	//declscope:private
 	src netip.Addr
 	//declscope:private
 	at time.Time
@@ -48,7 +50,7 @@ type txPacket struct {
 // inside a synctest bubble synctest.Wait returns once every queued packet
 // has been handled.
 //
-//declscope:package // shared by the Light and Full tests
+//declscope:shared // shared by the Light and Full tests
 type fakeConn struct {
 	local  netip.AddrPort
 	opts   tstamp.Options
@@ -109,7 +111,7 @@ func (c *fakeConn) Close() error {
 
 // sent returns and forgets the datagrams written so far.
 //
-//declscope:package // shared by the Light and Full tests
+//declscope:shared // shared by the Light and Full tests
 func (c *fakeConn) sent() []txPacket {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -170,7 +172,7 @@ func start(t *testing.T, cfg reflector.Config, deps reflector.Deps) *harness {
 // senderPacket builds a Session-Sender packet of n octets whose padding
 // counts up from 0.
 //
-//declscope:package // shared by the Light and Full tests
+//declscope:shared // shared by the Light and Full tests
 func senderPacket(seq uint32, n int) []byte {
 	p := wire.SenderPacket{Seq: seq, Timestamp: ntptime.New(0x11223344, 0x55667788), ErrorEstimate: errest.New(true, false, 10, 210)}
 	b := make([]byte, max(n, wire.SenderHeaderSize))
@@ -210,7 +212,7 @@ func (h *harness) reflect(i int, b []byte, from netip.AddrPort, meta tstamp.RxMe
 // eventually waits up to 5 s for cond, for counters that real sockets
 // update asynchronously.
 //
-//declscope:package // used by the loopback tests
+//declscope:shared // used by the loopback tests
 func eventually(t *testing.T, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -703,6 +705,105 @@ func TestServeTwice(t *testing.T) {
 			t.Error("second Serve succeeded")
 		}
 	})
+}
+
+// newIdleLight binds a Light reflector on one fake socket that never
+// receives anything.
+func newIdleLight(t *testing.T) (*reflector.Light, *fakeConn) {
+	t.Helper()
+	c := &fakeConn{local: listenerA, in: make(chan rxPacket), closed: make(chan struct{})}
+	l, err := reflector.ListenLight(reflector.Config{Listeners: []netip.AddrPort{listenerA}}, reflector.Deps{
+		Listen: func(string, netip.AddrPort, tstamp.Options) (tstamp.Conn, error) { return c, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return l, c
+}
+
+func TestLightCloseStopsServe(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		l, c := newIdleLight(t)
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		done := make(chan error, 1)
+		go func() { done <- l.Serve(ctx) }()
+		synctest.Wait()
+		if err := l.Close(); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-c.closed:
+		default:
+			t.Error("Close left the socket open")
+		}
+		synctest.Wait()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Errorf("Serve: %v", err)
+			}
+		default:
+			t.Error("Close returned but Serve is still waiting for ctx")
+			cancel()
+			<-done
+		}
+	})
+}
+
+func TestLightCloseBeforeServe(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		l, c := newIdleLight(t)
+		for range 2 {
+			if err := l.Close(); err != nil {
+				t.Fatal(err)
+			}
+		}
+		select {
+		case <-c.closed:
+		default:
+			t.Error("Close left the socket open")
+		}
+		ctx, cancel := context.WithTimeout(t.Context(), time.Hour)
+		defer cancel()
+		if err := l.Serve(ctx); err == nil {
+			t.Error("Serve after Close succeeded")
+		}
+	})
+}
+
+func TestLightConcurrentClose(t *testing.T) {
+	// Close may come before Serve has started, or while it runs: either way
+	// Serve returns at once rather than waiting for ctx.
+	for i := range 100 {
+		synctest.Test(t, func(t *testing.T) {
+			l, _ := newIdleLight(t)
+			ctx, cancel := context.WithTimeout(t.Context(), time.Hour)
+			defer cancel()
+			began := time.Now()
+			done := make(chan error, 1)
+			go func() { done <- l.Serve(ctx) }()
+			if i%2 == 0 {
+				synctest.Wait() // Serve is running
+			}
+			var wg sync.WaitGroup
+			for range 10 {
+				wg.Go(func() {
+					if err := l.Close(); err != nil {
+						t.Error(err)
+					}
+				})
+			}
+			wg.Wait()
+			err := <-done
+			if time.Since(began) != 0 {
+				t.Fatal("Serve waited for ctx after Close")
+			}
+			if i%2 == 0 && err != nil {
+				t.Errorf("Serve: %v", err)
+			}
+		})
+	}
 }
 
 func TestConfigValidation(t *testing.T) {

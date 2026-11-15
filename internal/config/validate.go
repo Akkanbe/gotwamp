@@ -619,7 +619,7 @@ func (k *checker) controlModes(c ControlServer) {
 // checkSecretFiles refuses private keys and shared secrets that others than
 // their owner may read (mode beyond 0600) or that do not exist.
 //
-//declscope:package // Load checks the files of the configuration it read
+//declscope:shared // Load checks the files of the configuration it read
 func (c *Config) checkSecretFiles() error {
 	var k checker
 	for _, f := range []struct{ key, path string }{

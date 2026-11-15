@@ -85,3 +85,51 @@ func TestStopNMonitorLifetime(t *testing.T) {
 		})
 	}
 }
+
+// TestISCAfterControlLoss checks that StartN and StopN report a control
+// connection the monitor saw fail while a session ran.
+func TestISCAfterControlLoss(t *testing.T) {
+	for _, call := range []string{"start", "stop"} {
+		t.Run(call, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				cc, sc := pipe(clientAddr, serverAddr)
+				wait := serve(t, sc, func(s script) {
+					defer sc.Close()
+					iscScript(s, func(s script) {
+						recvN(s, 1)
+						s.send(&wire.SessionControl{Command: wire.CommandStartNAck, SIDs: []wire.SID{{1}}})
+					})
+				})
+				defer func() { _ = cc.Close(); _ = sc.Close(); wait() }()
+				c, err := client.Handshake(t.Context(), cc, client.Config{Features: wire.ModeIndividualSessionControl})
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer c.Close()
+				var sessions []*client.Session
+				for _, port := range []uint16{1, 2} {
+					s, err := c.Request(t.Context(), client.Request{SenderPort: port})
+					if err != nil {
+						t.Fatal(err)
+					}
+					sessions = append(sessions, s)
+				}
+				if _, err := c.StartN(t.Context(), sessions[:1]); err != nil {
+					t.Fatal(err)
+				}
+				<-c.Lost() // the server closed the connection while session 1 ran
+				if call == "start" {
+					_, err = c.StartN(t.Context(), sessions[1:])
+				} else {
+					_, err = c.StopN(t.Context(), sessions[:1])
+				}
+				if !errors.Is(err, client.ErrControlLost) {
+					t.Errorf("%sN error=%v, want control loss", call, err)
+				}
+				if c.State() != client.StateClosed {
+					t.Errorf("state=%v, want closed", c.State())
+				}
+			})
+		})
+	}
+}

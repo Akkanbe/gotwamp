@@ -13,7 +13,7 @@ import (
 // takes a restart, as sender.keys_file and reflector.control.keys_file are
 // listed in config.Diff's Restart.
 //
-//declscope:package // Start reads them for the sender service and the control server
+//declscope:shared // Start reads them for the sender service and the control server
 type keyStores struct {
 	// sender is sender.keys_file; nil without one.
 	sender keystore.Store
@@ -25,7 +25,7 @@ type keyStores struct {
 // names a key that exists. A failure is a configuration error; it never
 // shows a passphrase.
 //
-//declscope:package // Start reads the keys with it
+//declscope:shared // Start reads the keys with it
 func loadKeys(cfg *config.Config) (keyStores, error) {
 	var ks keyStores
 	if path := cfg.Sender.KeysFile; path != "" {
@@ -53,7 +53,7 @@ func loadKeys(cfg *config.Config) (keyStores, error) {
 // testSecret is the TWAMP-Control security of a Full test: the mode to ask
 // for and, but for unauthenticated, the shared secret.
 //
-//declscope:package // newPlan puts it into the Full configuration
+//declscope:shared // newPlan puts it into the Full configuration
 type testSecret struct {
 	modes      wire.Modes
 	keyID      string
@@ -63,7 +63,7 @@ type testSecret struct {
 // testSecurity resolves the security of a Full test against the sender's
 // keys.
 //
-//declscope:package // newPlan resolves every Full test's security with it
+//declscope:shared // newPlan resolves every Full test's security with it
 func testSecurity(p config.TestParams, keys keystore.Store) (testSecret, error) {
 	var s testSecret
 	switch p.Security {
@@ -92,7 +92,7 @@ func testSecurity(p config.TestParams, keys keystore.Store) (testSecret, error) 
 
 // offeredModes converts reflector.control.modes.
 //
-//declscope:package // the control server offers them
+//declscope:shared // the control server offers them
 func offeredModes(c config.ControlServer) wire.Modes {
 	var m wire.Modes
 	for _, name := range c.OfferedModes() {

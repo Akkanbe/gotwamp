@@ -19,8 +19,6 @@ and Light, built as two binaries, the daemon `gotwampd` and the CLI `gotwamp`. M
 ## Dependency direction (SPEC §4.3)
 
 ```
-sender/, reflector/ → internal/{sender,reflector} → internal/{control,tstamp,stats,twamp/*}
-shared values: root gotwamp package ← internal codecs / engines (standard library only, no I/O)
 cmd → internal/{daemon,cli} → internal/{schedule,store,export,config} → internal/{control,sender,reflector}
     → internal/{tstamp,clock,stats} → internal/twamp/{wire,ntptime,errest}
 ```
@@ -38,9 +36,9 @@ cmd → internal/{daemon,cli} → internal/{schedule,store,export,config} → in
   Follow the skill `declscope-adoption` (`~/.claude/skills/declscope-adoption/SKILL.md`) for its use and for
   fixing its diagnostics.
   The principle: one file = one namespace. Declarations are private to their file by default. Mark only the
-  declarations other files use with `//declscope:package // <reason>`. Fix diagnostics with structure
+  declarations other files use with `//declscope:shared // <reason>`. Fix diagnostics with structure
   (splitting or merging files), not with a flood of directives.
-- Tests: `go test -race ./...` and `make test-library` are required. The independent consumer module checks public type closure and excludes daemon dependencies. Coverage of `internal/twamp` and `internal/stats` is 90% or more,
+- Tests: `go test -race ./...` is required. Coverage of `internal/twamp` and `internal/stats` is 90% or more,
   70% or more overall. Time-dependent logic uses `testing/synctest`. Decoders have fuzz tests. Golden byte
   sequences taken from the RFC figures go in `test/golden/`.
 - Exported identifiers have doc comments. Errors are wrapped with `fmt.Errorf("...: %w", err)`.

@@ -72,7 +72,11 @@ type FullConfig struct {
 	// EndDelay is the wait between the end of the run and Stop-Sessions
 	// (CMP-18).
 	EndDelay time.Duration
-	deps     fullDeps
+	// Dial opens the control connection from local (invalid: any address);
+	// nil dials TCP with keepalive and ControlDSCP.
+	Dial func(ctx context.Context, local netip.Addr, server netip.AddrPort) (net.Conn, error)
+	// Listen opens the Sender socket; nil means tstamp.Listen.
+	Listen func(network string, local netip.AddrPort, opts tstamp.Options) (tstamp.Conn, error)
 	// Accepted, when set, is called once the server has accepted the
 	// session, before Start-Sessions, with its SID and the reflector address
 	// and port the test packets go to.
@@ -100,29 +104,8 @@ type FullConfig struct {
 	PaddingToReflect uint16
 }
 
-// fullDeps contains private transport injection for the daemon and tests.
-type fullDeps struct {
-	// Dial opens the control connection from local (invalid: any address);
-	// nil dials TCP with keepalive and ControlDSCP.
-	Dial func(ctx context.Context, local netip.Addr, server netip.AddrPort) (net.Conn, error)
-	// Listen opens the Sender socket; nil means tstamp.Listen.
-	Listen func(network string, local netip.AddrPort, opts tstamp.Options) (tstamp.Conn, error)
-}
-
-// WithFullDial injects the control dialer for internal consumers.
-func WithFullDial(fc FullConfig, dial func(context.Context, netip.Addr, netip.AddrPort) (net.Conn, error)) FullConfig {
-	fc.deps.Dial = dial
-	return fc
-}
-
-// WithFullListen injects the UDP listener for internal consumers.
-func WithFullListen(fc FullConfig, listen func(string, netip.AddrPort, tstamp.Options) (tstamp.Conn, error)) FullConfig {
-	fc.deps.Listen = listen
-	return fc
-}
-
-// WithDefaults returns fc with zero values replaced by the defaults.
-func (fc FullConfig) WithDefaults() FullConfig {
+// withDefaults returns fc with zero values replaced by the defaults.
+func (fc FullConfig) withDefaults() FullConfig {
 	if fc.Server.Port() == 0 {
 		fc.Server = netip.AddrPortFrom(fc.Server.Addr(), defaultControlPort)
 	}
@@ -133,15 +116,13 @@ func (fc FullConfig) WithDefaults() FullConfig {
 	if fc.SenderPorts == (PortRange{}) {
 		fc.SenderPorts = defaultSenderPorts
 	}
-	if fc.deps.Listen == nil {
-		fc.deps.Listen = tstamp.Listen
+	if fc.Listen == nil {
+		fc.Listen = tstamp.Listen
 	}
 	return fc
 }
 
-// Validate checks the control configuration without opening a connection.
-func (fc FullConfig) Validate() error {
-	fc = fc.WithDefaults()
+func (fc FullConfig) validate() error {
 	switch {
 	case !fc.Server.Addr().IsValid():
 		return errors.New("sender: control server address is required")
@@ -152,50 +133,37 @@ func (fc FullConfig) Validate() error {
 	case fc.EndDelay < 0:
 		return fmt.Errorf("sender: end delay %v is negative", fc.EndDelay)
 	}
-	if err := (client.Config{Modes: fc.Modes, KeyID: fc.KeyID, Passphrase: fc.Passphrase, Features: fc.Features}).Validate(); err != nil {
-		return err
-	}
-	return (client.Request{OctetsToReflect: fc.OctetsToReflect, PaddingToReflect: fc.PaddingToReflect}).ValidateFeatures(fc.Features)
+	return nil
 }
 
-// ValidateFull checks both configurations, including security and socket options,
-// without dialing or binding. Target is negotiated and is ignored.
-func ValidateFull(cfg Config, fc FullConfig) error {
-	_, err := normalizeFull(cfg, fc.WithDefaults())
-	return err
-}
-
-// normalizeFull rejects local configuration errors before transport acquisition.
-func normalizeFull(cfg Config, fc FullConfig) (Config, error) {
-	if err := fc.Validate(); err != nil {
-		return Config{}, err
+// checkReflection rejects Reflect Octets fields that no negotiation can
+// accept (RFC 6038 §4.2): set without asking for Reflect Octets, or with a
+// padding too short in every security mode fc.Modes allows. The mode and
+// features the server negotiates are checked again in the session request.
+func (fc FullConfig) checkReflection(padding int) error {
+	if fc.OctetsToReflect == 0 && fc.PaddingToReflect == 0 {
+		return nil
 	}
-	cfg.Target = fc.Server
-	if err := normalize(&cfg, true); err != nil {
-		return Config{}, err
+	if !fc.Features.Has(wire.ModeReflectOctets) {
+		return errors.New("octets to reflect need the reflect octets feature")
 	}
-	req := client.Request{
-		PaddingLength:   uint32(cfg.Padding), //nolint:gosec // G115: normalize bounds padding to 0-9000
-		OctetsToReflect: fc.OctetsToReflect, PaddingToReflect: fc.PaddingToReflect,
-	}
+	layout := wire.PaddingLayout{SymmetricalSize: fc.Features.Has(wire.ModeSymmetricalSize), ReflectLength: fc.PaddingToReflect}
 	modes := fc.Modes
 	if modes == 0 {
 		modes = wire.ModeUnauthenticated
 	}
 	var errs []error
-	for _, mode := range []wire.SecurityMode{wire.SecurityUnauthenticated, wire.SecurityAuthenticated, wire.SecurityEncrypted, wire.SecurityMixed} {
-		if !modes.Has(mode.Mode()) {
+	for _, m := range []wire.SecurityMode{wire.SecurityUnauthenticated, wire.SecurityAuthenticated, wire.SecurityEncrypted, wire.SecurityMixed} {
+		if !modes.Has(m.Mode()) {
 			continue
 		}
-		if err := req.ValidateLayout(mode, fc.Features); err != nil {
-			errs = append(errs, err)
-		} else {
-			return cfg, nil
+		err := layout.Validate(m.TestMode(), uint32(padding)) //nolint:gosec // G115: 0..maxPadding, checked by normalize
+		if err == nil {
+			return nil
 		}
+		errs = append(errs, fmt.Errorf("%v: %w", m, err))
 	}
-	// A preference mask need only have one possible valid outcome. The actual
-	// negotiated mode and features are checked again before Request-TW-Session.
-	return Config{}, fmt.Errorf("sender: request layout: %w", errors.Join(errs...))
+	return fmt.Errorf("padding to reflect: %w", errors.Join(errs...))
 }
 
 // RunFull carries out one TWAMP Full run on its own control connection
@@ -206,17 +174,32 @@ func normalizeFull(cfg Config, fc FullConfig) (Config, error) {
 //
 // Errors of the control protocol, including a failed connect, are
 // *client.Error, whose Stage and Accept tell what failed (SPEC §10.4 exit
-// code 4). Cancellation returns its cause; only open measurement windows
-// are aborted. Completed measurements survive cancellation during teardown. When
-// the control connection is lost during the run, the summary comes with an
-// error matching client.ErrControlLost. Bounded and aborted-window summary
-// hooks run after teardown; completed continuous windows stream immediately.
+// code 4). A canceled ctx returns its error with the aborted summary; once
+// the packets are all decided, a cancellation only cuts EndDelay short.
+// When the control connection is lost before Stop-Sessions is sent (with
+// Individual Session Control, before its Stop-N-Ack arrives), the summary
+// is marked invalid and comes with an error matching client.ErrControlLost;
+// a failed Stop-Sessions marks it invalid too.
 func RunFull(ctx context.Context, cfg Config, fc FullConfig, opts ...Option) (Summary, error) {
-	fc = fc.WithDefaults()
-	var err error
-	if cfg, err = normalizeFull(cfg, fc); err != nil {
+	fc = fc.withDefaults()
+	if err := fc.validate(); err != nil {
 		return Summary{}, err
 	}
+	// The security settings fail here rather than after connecting, with
+	// the stage Handshake gives them; the reflection settings below keep
+	// the stage of the session request.
+	if err := (client.Config{Modes: fc.Modes, KeyID: fc.KeyID, Passphrase: fc.Passphrase, Features: fc.Features}).Validate(); err != nil {
+		return Summary{}, &client.Error{Stage: client.StageSetup, Err: err}
+	}
+	check := cfg
+	check.Target = fc.Server
+	if err := normalize(&check, true); err != nil {
+		return Summary{}, err
+	}
+	if err := fc.checkReflection(check.Padding); err != nil {
+		return Summary{}, &client.Error{Stage: client.StageRequest, Err: err}
+	}
+	cfg.Timeout, cfg.Source = check.Timeout, check.Source
 
 	tcp, err := fc.dial(ctx, cfg.Source.Addr())
 	if err != nil {
@@ -260,24 +243,28 @@ func RunFull(ctx context.Context, cfg Config, fc FullConfig, opts ...Option) (Su
 	}
 	cfg.Target = sess.Reflector
 	cfg.Source = netip.AddrPort{}
-	// Completed continuous windows stream immediately. Bounded and aborted
-	// summaries wait for teardown so their flags agree with the terminal outcome.
+	// Results collected when the control connection was lost are kept but
+	// marked invalid (SPEC §5.6), in the summaries the hooks get too, which
+	// also carry the SID. A completed window of a continuous run is
+	// reported at once; the summary of a bounded run and those of aborted
+	// windows wait for the end of the session, which can still mark them
+	// invalid, so that the hooks get what RunFull returns.
 	var o options
 	for _, f := range opts {
 		f(&o)
 	}
 	var held []Summary
-	h := o.hooks
-	report := h.Summary
+	report := o.hooks.Summary
 	if report != nil {
+		h := o.hooks
 		h.Summary = func(s Summary) {
 			s.SID = sess.SID
 			s.Invalid = s.Invalid || c.Err() != nil
 			if cfg.Count > 0 || s.Aborted {
 				held = append(held, s)
-			} else {
-				report(s)
+				return
 			}
+			report(s)
 		}
 		opts = append(opts, WithHooks(h))
 	}
@@ -303,6 +290,8 @@ func RunFull(ctx context.Context, cfg Config, fc FullConfig, opts ...Option) (Su
 	}()
 	sum, runErr := snd.Run(runCtx)
 	sum.SID = sess.SID
+	// An error other than the cancellation of ctx is a failure of the
+	// socket, which Stop-Sessions reports to the server.
 	failed := runErr != nil && (ctx.Err() == nil || !errors.Is(runErr, context.Cause(ctx)))
 	if runErr == nil && fc.EndDelay > 0 && c.Err() == nil {
 		select {
@@ -321,17 +310,19 @@ func RunFull(ctx context.Context, cfg Config, fc FullConfig, opts ...Option) (Su
 		stopErr = stop(stopCtx, c, sess, accept)
 		stopCancel()
 	}
-	// Control loss retains precedence; otherwise keep a measurement failure,
-	// then caller cancellation, then a failure of best-effort teardown.
-	if lost := c.Err(); lost != nil {
-		runErr, failed = lost, true
-	} else if runErr == nil {
-		runErr = context.Cause(ctx)
-		if runErr == nil {
-			runErr = stopErr
-		}
+	// A control connection lost during the run or before Stop-Sessions was
+	// sent (Stop-Sessions has no acknowledgment; with Individual Session
+	// Control, before the Stop-N-Ack arrived), or a failed Stop-Sessions,
+	// leaves the results invalid (SPEC §5.6). A socket failure aborts the
+	// run without that mark, as in a Light run.
+	lost := c.Err()
+	switch {
+	case lost != nil:
+		runErr = lost
+	case runErr == nil:
+		runErr = stopErr
 	}
-	invalid := failed || stopErr != nil
+	invalid := lost != nil || stopErr != nil
 	sum.Invalid = sum.Invalid || invalid
 	for _, s := range held {
 		s.Invalid = s.Invalid || invalid
@@ -365,8 +356,8 @@ func stop(ctx context.Context, c *client.Client, sess *client.Session, accept wi
 func (fc FullConfig) dial(ctx context.Context, local netip.Addr) (net.Conn, error) {
 	ctx, cancel := context.WithTimeout(ctx, fc.ControlTimeout)
 	defer cancel()
-	if fc.deps.Dial != nil {
-		return fc.deps.Dial(ctx, local, fc.Server)
+	if fc.Dial != nil {
+		return fc.Dial(ctx, local, fc.Server)
 	}
 	d := net.Dialer{
 		KeepAliveConfig: net.KeepAliveConfig{Enable: true, Idle: keepAliveIdle, Interval: keepAliveInterval, Count: keepAliveCount},
@@ -395,7 +386,7 @@ func (fc FullConfig) bindSender(local netip.Addr, cfg Config) (tstamp.Conn, erro
 		TxTimestamps: cfg.Timestamping != tstamp.ModeUserspace, // T1' (SPEC §8.2)
 	}
 	if fc.SenderPort != 0 {
-		conn, err := fc.deps.Listen(network, netip.AddrPortFrom(local, fc.SenderPort), opts)
+		conn, err := fc.Listen(network, netip.AddrPortFrom(local, fc.SenderPort), opts)
 		if err != nil {
 			return nil, fmt.Errorf("sender: bind sender port %d: %w", fc.SenderPort, err)
 		}
@@ -408,7 +399,7 @@ func (fc FullConfig) bindSender(local netip.Addr, cfg Config) (tstamp.Conn, erro
 	for i := range size {
 		port := uint16(int(r.Low) + (start+i)%size) //nolint:gosec // within r by construction
 		var conn tstamp.Conn
-		if conn, err = fc.deps.Listen(network, netip.AddrPortFrom(local, port), opts); err == nil {
+		if conn, err = fc.Listen(network, netip.AddrPortFrom(local, port), opts); err == nil {
 			return conn, nil
 		}
 		if !errors.Is(err, syscall.EADDRINUSE) && !errors.Is(err, syscall.EACCES) {

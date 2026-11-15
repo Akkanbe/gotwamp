@@ -10,8 +10,6 @@ Work in progress toward the first release (v0.1.0).
 
 ### Added
 
-- **Go library**: curated `sender` and `reflector` APIs for embedded Full and Light measurement, canonical public result/security/error types, pure configuration validation, and a composed Full responder with joined shutdown ([library guide](docs/LIBRARY.md), ADR 0015). The daemon shares the same responder composition.
-
 - **Protocol**: the Unauthenticated mode of TWAMP (RFC 5357). TWAMP-Control Control-Client / Server, Session-Sender / Session-Reflector (Full), and the TWAMP Light sender / reflector (per-flow Reflector Sequence Number, ACL, rate limiting, DSCP reflection; ADR 0003). IPv4 / IPv6
 - **Measurement**: RTT, one-way delays (valid only when both ends are synchronized), IPDV / PDV / RFC 3550 jitter, loss (round-trip and estimated per direction), duplication, reordering, hop counts. Kernel transmit and receive timestamps (SO_TIMESTAMPING, T1' included) with a fallback to user space (ADR 0002), and the Error Estimate from adjtimex
 - **gotwampd**:
@@ -79,9 +77,6 @@ Work in progress toward the first release (v0.1.0).
 
 ### Fixed
 
-- **Library sender**: reconcile Full cancellation/control/Stop outcomes before final summary delivery; preserve completed continuous windows and canonicalize mapped IPv4 source addresses before family checks.
-- **ISC control client**: resume connection monitoring after session-state updates, preventing a normal disconnect after Stop-N-Ack from invalidating a stopped session.
-
 Found by the reviews from the maintenance and operations point of view (A: statistics and monitoring, B: daemon / CLI / configuration / distribution, C: protocol and data path).
 
 - JSON Lines: one failed write (a transient ENOSPC, for example) stopped the output until a restart. The file is now opened again a second later, and the failure and the recovery are logged.
@@ -99,6 +94,13 @@ Found by the reviews from the maintenance and operations point of view (A: stati
 - Component tests: tcpdump was left running after a failure.
 - Light reflector: a wildcard listener replied from the address the route chose rather than from the destination it was reached at (senders on multihomed hosts discarded the replies).
 - Full reflector: sessions whose padding did not fit max_packet_size were accepted and lost every packet (now refused with Accept 3).
+- Sender (Full): invalid security settings, an unknown timestamping mode, a negative read buffer or timestamping error, DSCP/ECN monitoring, and octets or padding to reflect that no negotiation can accept are now rejected before the control connection is opened, with the same control error stage as before (setup or request) (#1).
+- Sender (Full): the summary of a bounded run, and those of aborted windows, were reported before EndDelay and Stop-Sessions could fail. They are now reported afterwards, marked invalid when the control connection was lost or Stop-Sessions failed; a control connection lost during EndDelay ends the wait at once (#1).
+- Sender: an IPv4-mapped source address was refused with an IPv4 target, and a second `Close` returned an error (#1).
+- ISC control client: a server closing the control connection after the Stop-N-Ack of the last session was reported as a lost connection (#1).
+- Light reflector: `Close` did not stop a running `Serve`, which kept waiting for its context. `Close` now ends `Serve` and waits for its workers, and may be called repeatedly or concurrently (#1).
+- Full reflector: a shutdown while the drain timer of a closed control connection was releasing a session could return before that session's UDP reader had stopped (#1).
+- Tests: the kernel receive timestamp tests waited for nothing before measuring, and could see packets without a timestamp while Linux was still enabling receive timestamps (#1).
 
 ### Security
 

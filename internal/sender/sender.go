@@ -34,7 +34,7 @@ const (
 
 // Defaults the run reads too (SPEC Appendix A, §8.4).
 //
-//declscope:package // DefaultConfig and normalize set them; the run falls back on the errors, and its tests on the interval
+//declscope:shared // DefaultConfig and normalize set them; the run falls back on the errors, and its tests on the interval
 const (
 	defaultInterval       = 100 * time.Millisecond
 	defaultUserspaceError = 50 * time.Microsecond
@@ -64,8 +64,8 @@ type Config struct {
 	// from this address and port are accepted.
 	Target netip.AddrPort
 	// Source is the local address and port to bind. The zero value lets the
-	// system choose both. Mapped IPv4 addresses are unmapped before family
-	// checks and binding. It is not used with WithConn.
+	// system choose both. An IPv4-mapped IPv6 address stands for its IPv4
+	// address. It is not used with WithConn.
 	Source netip.AddrPort
 	// Count is the number of packets of the run. Zero runs continuously,
 	// summarizing every Window, until the context is canceled.
@@ -122,9 +122,10 @@ type Config struct {
 	MaxSamples int
 	// DSCPECNMonitoring reads the S-DSCP-ECN octet at offset 41 of the
 	// replies (RFC 7750): the DSCP and ECN with which the test packets
-	// reached the reflector. The Light reflector must be configured for it.
-	// Full mode currently cannot negotiate this extension and rejects it.
-	// Replies shorter than 44 octets are then malformed.
+	// reached the reflector. The reflector must write it: a Light reflector
+	// configured for it. Full runs reject it, since the Control-Client does
+	// not negotiate Modes bit 8. Replies shorter than 44 octets are then
+	// malformed.
 	DSCPECNMonitoring bool
 	// STAMP sends STAMP Session-Sender packets (RFC 8762 §4.2.1, TWAMP Light
 	// only): the 44-octet base with SSID, and the Padding, when not zero,
@@ -197,7 +198,7 @@ func WithConn(conn tstamp.Conn) Option {
 // withFull marks a session negotiated with TWAMP-Control: PaddingAuto is
 // random, and the reflector numbers its packets per session.
 //
-//declscope:package // RunFull sets it; the run tests set it to play a Full session
+//declscope:shared // RunFull sets it; the run tests set it to play a Full session
 func withFull() Option {
 	return func(o *options) { o.full = true }
 }
@@ -206,7 +207,7 @@ func withFull() Option {
 // session in the authenticated or encrypted mode (RFC 4656 §4.1.2); the
 // zero value leaves them unauthenticated.
 //
-//declscope:package // RunFull sets it from Accept-Session; the run applies it
+//declscope:shared // RunFull sets it from Accept-Session; the run applies it
 type testSecurity struct {
 	mode wire.SecurityMode
 	keys wire.TestKeys
@@ -215,7 +216,7 @@ type testSecurity struct {
 // withSecurity sends and receives the test packets in mode, which takes
 // effect only when authenticated or encrypted, with the session's keys.
 //
-//declscope:package // RunFull passes the mode it negotiated
+//declscope:shared // RunFull passes the mode it negotiated
 func withSecurity(mode wire.SecurityMode, keys wire.TestKeys) Option {
 	return func(o *options) {
 		if mode := mode.TestMode(); mode == wire.SecurityAuthenticated || mode == wire.SecurityEncrypted {
@@ -235,7 +236,7 @@ func (t testSecurity) testMode() wire.SecurityMode {
 // testLayout is the RFC 6038 layout of the test packets of a TWAMP Full
 // session.
 //
-//declscope:package // RunFull sets it from Accept-Session; the run checks the reflected octets
+//declscope:shared // RunFull sets it from Accept-Session; the run checks the reflected octets
 type testLayout struct {
 	layout       wire.PaddingLayout
 	serverOctets uint16
@@ -245,7 +246,7 @@ type testLayout struct {
 // the MBZ octets of Symmetrical Size, and the server octets at the start of
 // the padding to be reflected, whose return each reply is checked for.
 //
-//declscope:package // RunFull passes what it negotiated
+//declscope:shared // RunFull passes what it negotiated
 func withLayout(layout wire.PaddingLayout, serverOctets uint16) Option {
 	return func(o *options) { o.layout = testLayout{layout: layout, serverOctets: serverOctets} }
 }
@@ -253,7 +254,7 @@ func withLayout(layout wire.PaddingLayout, serverOctets uint16) Option {
 // withRand sets the source of random padding. The default is ChaCha8
 // seeded from crypto/rand.
 //
-//declscope:package // the padding tests make the random padding predictable
+//declscope:shared // the padding tests make the random padding predictable
 func withRand(r io.Reader) Option {
 	return func(o *options) { o.rand = r }
 }
@@ -279,8 +280,10 @@ type Sender struct {
 	ownConn bool
 	// packet is the Session-Sender packet; its padding is filled once and
 	// the header is rewritten for every send.
-	packet    []byte
-	used      bool
+	packet []byte
+	used   bool
+	// closeOnce makes Close idempotent: closeErr is what the first Close
+	// returned.
 	closeOnce sync.Once
 	closeErr  error
 }
@@ -366,28 +369,18 @@ func (s *Sender) finishPadding(hdr int) {
 	}
 }
 
-// WithDefaults returns a normalized Light configuration. Validate reports any
-// invalid fields; this method performs no I/O.
-func (cfg Config) WithDefaults() Config {
-	// Defaults are independent of endpoint validation.
-	applyDefaults(&cfg)
-	return cfg
-}
-
-// Validate checks a Light configuration without opening a socket.
-func (cfg Config) Validate() error { return normalize(&cfg, false) }
-
-// RunLight opens a sender, runs it once, and releases its socket.
-func RunLight(ctx context.Context, cfg Config, opts ...Option) (Summary, error) {
-	s, err := New(cfg, opts...)
-	if err != nil {
-		return Summary{}, err
+// normalize applies the defaults to cfg and validates it.
+func normalize(cfg *Config, full bool) error {
+	if !cfg.Target.IsValid() || cfg.Target.Port() == 0 {
+		return errors.New("sender: target address and port are required")
 	}
-	summary, runErr := s.Run(ctx)
-	return summary, errors.Join(runErr, s.Close())
-}
-
-func applyDefaults(cfg *Config) {
+	cfg.Target = netip.AddrPortFrom(cfg.Target.Addr().Unmap(), cfg.Target.Port())
+	if cfg.Source.IsValid() {
+		cfg.Source = netip.AddrPortFrom(cfg.Source.Addr().Unmap(), cfg.Source.Port())
+	}
+	if cfg.Source.IsValid() && cfg.Source.Addr().Is4() != cfg.Target.Addr().Is4() {
+		return fmt.Errorf("sender: source %v and target %v differ in address family", cfg.Source, cfg.Target)
+	}
 	if cfg.Interval <= 0 {
 		cfg.Interval = defaultInterval
 	}
@@ -403,21 +396,6 @@ func applyDefaults(cfg *Config) {
 	if cfg.TTL == 0 {
 		cfg.TTL = 255
 	}
-}
-
-// normalize applies the defaults to cfg and validates it.
-func normalize(cfg *Config, full bool) error {
-	if !cfg.Target.IsValid() || cfg.Target.Port() == 0 {
-		return errors.New("sender: target address and port are required")
-	}
-	cfg.Target = netip.AddrPortFrom(cfg.Target.Addr().Unmap(), cfg.Target.Port())
-	if cfg.Source.IsValid() {
-		cfg.Source = netip.AddrPortFrom(cfg.Source.Addr().Unmap(), cfg.Source.Port())
-	}
-	if cfg.Source.IsValid() && cfg.Source.Addr().Is4() != cfg.Target.Addr().Is4() {
-		return fmt.Errorf("sender: source %v and target %v differ in address family", cfg.Source, cfg.Target)
-	}
-	applyDefaults(cfg)
 	if full {
 		cfg.StatelessReflector = false
 	}
@@ -440,14 +418,14 @@ func normalize(cfg *Config, full bool) error {
 		return fmt.Errorf("sender: ttl %d out of range 1-255", cfg.TTL)
 	case cfg.PaddingFill > PaddingZero:
 		return fmt.Errorf("sender: unknown padding fill %d", cfg.PaddingFill)
+	case cfg.Timestamping > tstamp.ModeHardware:
+		return fmt.Errorf("sender: unknown timestamping mode %v", cfg.Timestamping)
+	case cfg.ReadBuffer < 0:
+		return fmt.Errorf("sender: read buffer %d is negative", cfg.ReadBuffer)
+	case cfg.UserspaceError < 0 || cfg.KernelError < 0 || cfg.HardwareError < 0 || cfg.MethodError < 0:
+		return errors.New("sender: timestamping errors must not be negative")
 	}
-	if cfg.UserspaceError < 0 || cfg.KernelError < 0 || cfg.HardwareError < 0 || cfg.MethodError < 0 {
-		return errors.New("sender: timestamping error must not be negative")
-	}
-	if cfg.MaxSamples < 0 {
-		return errors.New("sender: max samples must not be negative")
-	}
-	return (tstamp.Options{TTL: cfg.TTL, TOS: cfg.DSCP << 2, Mode: cfg.Timestamping, ReadBuffer: cfg.ReadBuffer}).Validate()
+	return nil
 }
 
 // Run sends the packets and collects their replies, until every packet of a
@@ -475,18 +453,21 @@ func (s *Sender) Run(ctx context.Context) (Summary, error) {
 }
 
 // LocalAddr returns the address and port the Sender sends from.
+//
+//declscope:ignore overexported // a caller letting New bind the socket learns its port here before Run
 func (s *Sender) LocalAddr() netip.AddrPort {
 	return s.conn.LocalAddr()
 }
 
 // Close closes the socket the Sender opened. A socket given with WithConn
-// is left open.
+// is left open. Later calls return what the first one did.
 func (s *Sender) Close() error {
 	s.closeOnce.Do(func() {
-		if s.ownConn {
-			if err := s.conn.Close(); err != nil {
-				s.closeErr = fmt.Errorf("sender: close: %w", err)
-			}
+		if !s.ownConn {
+			return
+		}
+		if err := s.conn.Close(); err != nil {
+			s.closeErr = fmt.Errorf("sender: close: %w", err)
 		}
 	})
 	return s.closeErr

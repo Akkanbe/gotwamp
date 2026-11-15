@@ -5,7 +5,7 @@ It measures round-trip and one-way delay, delay variation, loss, duplication and
 and reflects the test packets of other TWAMP implementations.
 
 > [!NOTE]
-> gotwamp is under development (v0.x). The Go library API, configuration keys, the gRPC API and the output formats may still change
+> gotwamp is under development (v0.x). Configuration keys, the gRPC API and the output formats may still change
 > between minor versions; breaking changes are listed in [CHANGELOG.md](CHANGELOG.md).
 > Interoperability with perfSONAR (twampd / twping 5.2.6) is checked in both directions every night
 > ([docs/ops/interop.md](docs/ops/interop.md)).
@@ -14,8 +14,6 @@ and reflects the test packets of other TWAMP implementations.
 
 - **Both roles, both flavors**: Session-Sender and Session-Reflector, for TWAMP Full (negotiated over
   TWAMP-Control) and TWAMP Light.
-- **Embedding library**: public `sender` and `reflector` packages run Full and Light inside another Go program,
-  with typed results, in-memory credentials and context-based lifecycle ([library guide](docs/LIBRARY.md)).
 - **Daemon and CLI**: the daemon `gotwampd` runs the reflector and the monitoring sessions; the CLI `gotwamp`
   talks to it over gRPC on a Unix domain socket, or from another host over TCP with mutual TLS (`--server`).
 - **Monitoring**: periodic or continuous sessions, with results exported as Prometheus metrics and JSON Lines,
@@ -331,7 +329,7 @@ The generated code (`internal/api/gen`) is excluded from every Go linter.
 to the file" and "shared within the package", and checks them. gotwamp requires it ([ADR 0004](docs/adr/0004-declscope.md)).
 
 - The principle is **one file = one namespace**. A package-level declaration is private to its file by default;
-  only the declarations other files use are marked with `//declscope:package // <reason>`.
+  only the declarations other files use are marked with `//declscope:shared // <reason>`.
 - Diagnostics are resolved by structure, splitting or merging files, not by a flood of directives.
 - `declscope shrink ./...` runs first. It reports exported identifiers under `internal/` that no other package
   uses; unexporting them can reveal new boundary violations, so it is settled before the analyzer

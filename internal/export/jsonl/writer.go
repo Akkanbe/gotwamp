@@ -35,8 +35,6 @@ var openFile = os.OpenFile
 type Records uint8
 
 // Record types, combinable.
-//
-//declscope:ignore overexported // an enum the daemon builds with ParseRecords; the values document Config.Records
 const (
 	RunSummary Records = 1 << iota
 	WindowSummary

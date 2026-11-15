@@ -1,4 +1,4 @@
-//declscope:namespace run // Full tests reuse the in-memory packet transport
+//declscope:namespace run // the Full tests run over the in-memory link of run_test.go
 
 package sender
 
@@ -71,8 +71,11 @@ func terminalConfig(t *testing.T, isc bool, l *link, stopErr error, finish func(
 		finish(b, c.stop)
 	}()
 	t.Cleanup(func() { c.once.Do(func() { close(c.stop) }); _ = a.Close(); _ = b.Close(); <-done })
-	fc := WithFullDial(FullConfig{Server: reflectorAddr, Features: features, ControlTimeout: 100 * time.Millisecond}, func(context.Context, netip.Addr, netip.AddrPort) (net.Conn, error) { return c, nil })
-	return WithFullListen(fc, func(string, netip.AddrPort, tstamp.Options) (tstamp.Conn, error) { return l, nil }), b.Close
+	return FullConfig{
+		Server: reflectorAddr, Features: features, ControlTimeout: 100 * time.Millisecond,
+		Dial:   func(context.Context, netip.Addr, netip.AddrPort) (net.Conn, error) { return c, nil },
+		Listen: func(string, netip.AddrPort, tstamp.Options) (tstamp.Conn, error) { return l, nil },
+	}, b.Close
 }
 
 func TestFullTerminalState(t *testing.T) {
@@ -161,7 +164,7 @@ func TestFullTerminalState(t *testing.T) {
 						}
 					}
 					sum, err := RunFull(ctx, cfg, fc, WithHooks(hooks))
-					wantInvalid := event == "loss_measurement" || event == "loss_delay" || event == "socket_failure" || event == "stop_failure"
+					wantInvalid := event == "loss_measurement" || event == "loss_delay" || event == "stop_failure"
 					switch event {
 					case "success":
 						if err != nil {
@@ -170,7 +173,13 @@ func TestFullTerminalState(t *testing.T) {
 						if callbackAt.Before(packetAt.Add(fc.EndDelay)) {
 							t.Error("bounded callback preceded teardown")
 						}
-					case "cancel_measurement", "cancel_delay", "cancel_stop", "custom_cancel":
+					case "cancel_delay", "cancel_stop":
+						// Every packet was decided: the cancellation only
+						// cuts EndDelay short.
+						if err != nil {
+							t.Error(err)
+						}
+					case "cancel_measurement", "custom_cancel":
 						want := error(context.Canceled)
 						if event == "custom_cancel" {
 							want = custom
@@ -231,23 +240,19 @@ func TestFullStopTimeoutFinalSummary(t *testing.T) {
 func TestFullContinuousCompletedWindowsSurviveFailure(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		l := newLink()
-		failure := errors.New("receive failed after a completed window")
-		fc, _ := terminalConfig(t, false, l, nil, func(peer net.Conn, stopped <-chan struct{}) {
-			<-stopped
-			_, _ = io.CopyN(io.Discard, peer, wire.StopSessionsSize)
-		})
+		fc, closeControl := terminalConfig(t, false, l, nil, func(_ net.Conn, stopped <-chan struct{}) { <-stopped })
 		cfg := testConfig(0)
 		cfg.Interval, cfg.Window = 50*time.Millisecond, 100*time.Millisecond
 		var hooked []Summary
 		sum, err := RunFull(t.Context(), cfg, fc, WithHooks(Hooks{
-			Packet: func(p PacketResult) {
-				if p.Record.SenderSeq == 2 {
-					l.readErr = failure
+			Summary: func(s Summary) {
+				hooked = append(hooked, s)
+				if len(hooked) == 1 {
+					_ = closeControl() // once the first window is reported
 				}
 			},
-			Summary: func(s Summary) { hooked = append(hooked, s) },
 		}))
-		if !errors.Is(err, failure) || !sum.Invalid || !sum.Aborted {
+		if !errors.Is(err, client.ErrControlLost) || !sum.Invalid || !sum.Aborted {
 			t.Errorf("summary=%+v error=%v", sum, err)
 		}
 		if len(hooked) != 2 {

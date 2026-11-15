@@ -19,15 +19,24 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Akkanbe/gotwamp"
 	"github.com/Akkanbe/gotwamp/internal/twamp/wire"
 )
 
-// Store looks up a shared secret.
-type Store = gotwamp.CredentialStore
+// Store looks up the passphrase of an identity.
+type Store interface {
+	// Passphrase returns the shared secret of id, and false for an unknown
+	// identity.
+	Passphrase(id string) ([]byte, bool)
+}
 
 // Map is a Store held in memory.
-type Map = gotwamp.Credentials
+type Map map[string][]byte
+
+// Passphrase returns the shared secret of id.
+func (m Map) Passphrase(id string) ([]byte, bool) {
+	p, ok := m[id]
+	return p, ok
+}
 
 // LoadPFS reads a pfs file.
 func LoadPFS(path string) (Map, error) {

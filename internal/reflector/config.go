@@ -21,7 +21,7 @@ const (
 
 // Defaults the Light and the Full reflector share (SPEC appendix A).
 //
-//declscope:package // Config and FullConfig take the same defaults
+//declscope:shared // Config and FullConfig take the same defaults
 const (
 	defaultTTL           = 255
 	defaultMaxPacketSize = 9000
@@ -30,7 +30,7 @@ const (
 
 // maxUDPPayload is the largest UDP payload over IPv4.
 //
-//declscope:package // bounds MaxPacketSize in Config and FullConfig
+//declscope:shared // bounds MaxPacketSize in Config and FullConfig
 const maxUDPPayload = 65507
 
 // DefaultListeners are the Light listeners used when none are configured.
@@ -141,7 +141,6 @@ func (c Config) WithDefaults() Config {
 // Validate checks a configuration that already has its defaults.
 func (c Config) Validate() error {
 	var errs []error
-	errs = append(errs, (tstamp.Options{Mode: c.Timestamping, ReadBuffer: c.ReadBuffer}).Validate())
 	seen := make(map[netip.AddrPort]bool, len(c.Listeners))
 	for _, l := range c.Listeners {
 		if !l.IsValid() {

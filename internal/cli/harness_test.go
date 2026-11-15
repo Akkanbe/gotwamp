@@ -22,7 +22,7 @@ import (
 
 // fakeDaemon serves scripted answers in process.
 //
-//declscope:package // the fixture of every cli test file
+//declscope:shared // the fixture of every cli test file
 type fakeDaemon struct {
 	gotwampv1.UnimplementedDaemonServiceServer
 	gotwampv1.UnimplementedSenderServiceServer
@@ -118,7 +118,7 @@ func (f *fakeDaemon) record(name string, req proto.Message) {
 
 // last returns the last request of an RPC, or nil.
 //
-//declscope:package // the fixture of every cli test file
+//declscope:shared // the fixture of every cli test file
 func (f *fakeDaemon) last(name string) proto.Message {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -248,7 +248,7 @@ func (f *fakeDaemon) ListReflectorSessions(context.Context, *gotwampv1.ListRefle
 
 // lastSpec returns the spec of the last RunTest.
 //
-//declscope:package // the fixture of every cli test file
+//declscope:shared // the fixture of every cli test file
 func (f *fakeDaemon) lastSpec() *gotwampv1.TestSpec {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -257,7 +257,7 @@ func (f *fakeDaemon) lastSpec() *gotwampv1.TestSpec {
 
 // harness runs gotwamp against a fakeDaemon over bufconn.
 //
-//declscope:package // the fixture of every cli test file
+//declscope:shared // the fixture of every cli test file
 type harness struct {
 	fake *fakeDaemon
 	//declscope:private
@@ -266,14 +266,14 @@ type harness struct {
 
 // newFakeDaemon returns a fake daemon with nothing scripted.
 //
-//declscope:package // the fixture of every cli test file
+//declscope:shared // the fixture of every cli test file
 func newFakeDaemon() *fakeDaemon {
 	return &fakeDaemon{stop: make(chan struct{}, 1), requests: map[string]proto.Message{}}
 }
 
 // newHarness serves a fakeDaemon until the test ends.
 //
-//declscope:package // the fixture of every cli test file
+//declscope:shared // the fixture of every cli test file
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 	lis := bufconn.Listen(1 << 20)
@@ -293,14 +293,14 @@ func newHarness(t *testing.T) *harness {
 
 // run runs gotwamp with args.
 //
-//declscope:package // the fixture of every cli test file
+//declscope:shared // the fixture of every cli test file
 func (h *harness) run(ctx context.Context, args ...string) (code int, stdout, stderr string) {
 	return h.runInterrupted(ctx, nil, args...)
 }
 
 // runInterrupted runs gotwamp with args and interrupts as Env.Interrupt.
 //
-//declscope:package // the fixture of every cli test file
+//declscope:shared // the fixture of every cli test file
 func (h *harness) runInterrupted(ctx context.Context, interrupts <-chan struct{}, args ...string) (code int, stdout, stderr string) {
 	var out, errb bytes.Buffer
 	code = Main(ctx, args, BuildInfo{Version: "v0.2.0", Commit: "abc1234"}, Env{

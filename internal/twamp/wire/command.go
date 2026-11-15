@@ -12,8 +12,6 @@ const ControlHeaderSize = 16
 type Command uint8
 
 // Command Numbers registered for TWAMP.
-//
-//declscope:ignore overexported // the whole IANA registry, so that String names every command a peer sends
 const (
 	CommandReserved               Command = 0  // RFC 5357
 	CommandForbidden              Command = 1  // OWAMP Request-Session, RFC 5357

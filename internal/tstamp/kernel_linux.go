@@ -36,7 +36,7 @@ const (
 // altogether, SO_TIMESTAMPNS still gives receive timestamps. It reports what
 // is on, and fails only when the kernel gives no receive timestamps at all.
 //
-//declscope:package // called by Listen when the requested mode allows kernel timestamps
+//declscope:shared // called by Listen when the requested mode allows kernel timestamps
 func enableKernelTimestamping(rc syscall.RawConn, hw, tx bool) (txOn, hwOn bool, err error) {
 	type attempt struct{ hw, tx bool }
 	var attempts []attempt
@@ -84,7 +84,7 @@ func enableKernelTimestamping(rc syscall.RawConn, hw, tx bool) (txOn, hwOn bool,
 // the callback handed to RawConn.Control are made once, so that reading
 // does not allocate.
 //
-//declscope:package // a Conn with transmit timestamps holds one
+//declscope:shared // a Conn with transmit timestamps holds one
 type txQueue struct {
 	rc    syscall.RawConn
 	oob   []byte
@@ -97,7 +97,7 @@ type txQueue struct {
 	err error
 }
 
-//declscope:package // Listen creates one for a Conn with transmit timestamps
+//declscope:shared // Listen creates one for a Conn with transmit timestamps
 func newTxQueue(rc syscall.RawConn) *txQueue {
 	q := &txQueue{rc: rc, oob: make([]byte, errQueueOOBSize)}
 	q.drain = q.drainFD
@@ -106,7 +106,7 @@ func newTxQueue(rc syscall.RawConn) *txQueue {
 
 // read drains the error queue without waiting.
 //
-//declscope:package // ReadTxTimestamps delegates to it
+//declscope:shared // ReadTxTimestamps delegates to it
 func (q *txQueue) read(fn func(id uint32, at time.Time)) (int, error) {
 	q.fn, q.n, q.err = fn, 0, nil
 	cerr := q.rc.Control(q.drain)

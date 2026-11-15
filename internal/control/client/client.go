@@ -79,12 +79,10 @@ func (cfg *Config) choose(offered wire.Modes) (wire.SecurityMode, bool) {
 	return 0, false
 }
 
-// Validate checks security settings without I/O. Zero values use the same defaults
-// as Handshake; the configuration is not modified.
+// Validate checks the security modes, the credentials they need and the
+// features, without I/O. Handshake calls it; a caller can call it before
+// connecting.
 func (cfg Config) Validate() error {
-	if cfg.Modes == 0 {
-		cfg.Modes = wire.ModeUnauthenticated
-	}
 	if cfg.Modes&^wire.SecurityModes != 0 {
 		return fmt.Errorf("modes %v: only the security modes can be chosen", cfg.Modes)
 	}
@@ -107,8 +105,6 @@ func (cfg Config) Validate() error {
 type State uint8
 
 // Control-Client states.
-//
-//declscope:ignore overexported // the values State reports; the tests check the state machine with them
 const (
 	StateClosed State = iota
 	StateIdle
@@ -146,23 +142,6 @@ type Request struct {
 	PaddingToReflect uint16
 	// DSCP is the Type-P DSCP (0–63) the reflector must use.
 	DSCP uint8
-}
-
-// ValidateFeatures checks reflection fields against requested or negotiated features.
-func (r Request) ValidateFeatures(features wire.Modes) error {
-	if (r.OctetsToReflect != 0 || r.PaddingToReflect != 0) && !features.Has(wire.ModeReflectOctets) {
-		return errors.New("octets to reflect need reflect octets mode, which was not requested or negotiated")
-	}
-	return nil
-}
-
-// ValidateLayout checks the request against one possible or negotiated test mode.
-func (r Request) ValidateLayout(mode wire.SecurityMode, features wire.Modes) error {
-	if err := r.ValidateFeatures(features); err != nil {
-		return err
-	}
-	layout := wire.PaddingLayout{SymmetricalSize: features.Has(wire.ModeSymmetricalSize), ReflectLength: r.PaddingToReflect}
-	return layout.Validate(mode.TestMode(), r.PaddingLength)
 }
 
 // Session is a session the server accepted.
@@ -471,9 +450,12 @@ func (c *Client) buildRequest(r Request) (wire.RequestTWSession, netip.Addr, err
 		req.StartTime = ntptime.FromTime(r.StartTime)
 	}
 	if r.OctetsToReflect != 0 || r.PaddingToReflect != 0 {
+		if !c.features.Has(wire.ModeReflectOctets) {
+			return wire.RequestTWSession{}, netip.Addr{}, errors.New("octets to reflect need reflect octets mode, which was not negotiated")
+		}
 		req.OctetsToReflect, req.PaddingToReflect = r.OctetsToReflect, r.PaddingToReflect
 	}
-	if err := r.ValidateLayout(c.mode.TestMode(), c.features); err != nil {
+	if err := c.layout(&req).Validate(c.mode.TestMode(), req.PaddingLength); err != nil {
 		return wire.RequestTWSession{}, netip.Addr{}, err
 	}
 	if !r.ZeroAddresses {
