@@ -79,8 +79,10 @@ func (cfg *Config) choose(offered wire.Modes) (wire.SecurityMode, bool) {
 	return 0, false
 }
 
-// validate checks the security settings once the defaults are applied.
-func (cfg *Config) validate() error {
+// Validate checks the security modes, the credentials they need and the
+// features, without I/O. Handshake calls it; a caller can call it before
+// connecting.
+func (cfg Config) Validate() error {
 	if cfg.Modes&^wire.SecurityModes != 0 {
 		return fmt.Errorf("modes %v: only the security modes can be chosen", cfg.Modes)
 	}
@@ -205,7 +207,7 @@ func Handshake(ctx context.Context, conn net.Conn, cfg Config) (*Client, error) 
 	if cfg.Rand == nil {
 		cfg.Rand = rand.Reader
 	}
-	if err := cfg.validate(); err != nil {
+	if err := cfg.Validate(); err != nil {
 		_ = conn.Close()
 		return nil, &Error{Stage: StageSetup, Err: err}
 	}

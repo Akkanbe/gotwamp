@@ -52,6 +52,31 @@ func readOne(t *testing.T, c Conn, b []byte) (int, netip.AddrPort, RxMeta) {
 	return n, from, meta
 }
 
+// awaitKernelTimestamp waits for Linux's deferred timestamp activation before
+// the measured packets. Every probe is consumed, and missing support still fails.
+func awaitKernelTimestamp(t *testing.T, tx, rx Conn) {
+	t.Helper()
+	readyBy := time.Now().Add(time.Second)
+	if err := rx.SetReadDeadline(readyBy); err != nil {
+		t.Fatalf("timestamp warm-up deadline: %v", err)
+	}
+	payload, buf := []byte("timestamp-warmup"), make([]byte, 64)
+	for time.Now().Before(readyBy) {
+		if _, err := tx.WriteTo(payload, rx.LocalAddr(), -1); err != nil {
+			t.Fatalf("timestamp warm-up send: %v", err)
+		}
+		_, _, meta, err := rx.ReadFrom(buf)
+		if err != nil {
+			t.Fatalf("timestamp warm-up receive: %v", err)
+		}
+		if meta.Kernel {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("kernel receive timestamp did not become ready within 1s")
+}
+
 func TestLoopbackRoundTrip(t *testing.T) {
 	for _, f := range families {
 		t.Run(f.network, func(t *testing.T) {
@@ -59,10 +84,12 @@ func TestLoopbackRoundTrip(t *testing.T) {
 			// the sender set.
 			tx := listenLoopback(t, f, Options{TTL: 200, TOS: 0x28})
 			rx := listenLoopback(t, f, Options{})
-			// ModeAuto: Linux gives kernel timestamps.
+			// ModeAuto enables kernel timestamping when socket setup succeeds.
 			if tx.Mode() != ModeKernel || rx.Mode() != ModeKernel {
 				t.Fatalf("Mode() = %v, %v, want kernel", tx.Mode(), rx.Mode())
 			}
+
+			awaitKernelTimestamp(t, tx, rx)
 
 			payload := []byte("twamp-test-packet")
 			buf := make([]byte, 64)
@@ -211,6 +238,7 @@ func TestKernelRxTimestamps(t *testing.T) {
 		t.Run(f.network, func(t *testing.T) {
 			tx := listenLoopback(t, f, Options{Mode: ModeUserspace})
 			rx := listenLoopback(t, f, Options{Mode: ModeKernel})
+			awaitKernelTimestamp(t, tx, rx)
 			buf := make([]byte, 64)
 			const n = 500
 			var lag []time.Duration

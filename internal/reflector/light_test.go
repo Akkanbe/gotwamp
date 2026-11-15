@@ -707,6 +707,105 @@ func TestServeTwice(t *testing.T) {
 	})
 }
 
+// newIdleLight binds a Light reflector on one fake socket that never
+// receives anything.
+func newIdleLight(t *testing.T) (*reflector.Light, *fakeConn) {
+	t.Helper()
+	c := &fakeConn{local: listenerA, in: make(chan rxPacket), closed: make(chan struct{})}
+	l, err := reflector.ListenLight(reflector.Config{Listeners: []netip.AddrPort{listenerA}}, reflector.Deps{
+		Listen: func(string, netip.AddrPort, tstamp.Options) (tstamp.Conn, error) { return c, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return l, c
+}
+
+func TestLightCloseStopsServe(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		l, c := newIdleLight(t)
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		done := make(chan error, 1)
+		go func() { done <- l.Serve(ctx) }()
+		synctest.Wait()
+		if err := l.Close(); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-c.closed:
+		default:
+			t.Error("Close left the socket open")
+		}
+		synctest.Wait()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Errorf("Serve: %v", err)
+			}
+		default:
+			t.Error("Close returned but Serve is still waiting for ctx")
+			cancel()
+			<-done
+		}
+	})
+}
+
+func TestLightCloseBeforeServe(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		l, c := newIdleLight(t)
+		for range 2 {
+			if err := l.Close(); err != nil {
+				t.Fatal(err)
+			}
+		}
+		select {
+		case <-c.closed:
+		default:
+			t.Error("Close left the socket open")
+		}
+		ctx, cancel := context.WithTimeout(t.Context(), time.Hour)
+		defer cancel()
+		if err := l.Serve(ctx); err == nil {
+			t.Error("Serve after Close succeeded")
+		}
+	})
+}
+
+func TestLightConcurrentClose(t *testing.T) {
+	// Close may come before Serve has started, or while it runs: either way
+	// Serve returns at once rather than waiting for ctx.
+	for i := range 100 {
+		synctest.Test(t, func(t *testing.T) {
+			l, _ := newIdleLight(t)
+			ctx, cancel := context.WithTimeout(t.Context(), time.Hour)
+			defer cancel()
+			began := time.Now()
+			done := make(chan error, 1)
+			go func() { done <- l.Serve(ctx) }()
+			if i%2 == 0 {
+				synctest.Wait() // Serve is running
+			}
+			var wg sync.WaitGroup
+			for range 10 {
+				wg.Go(func() {
+					if err := l.Close(); err != nil {
+						t.Error(err)
+					}
+				})
+			}
+			wg.Wait()
+			err := <-done
+			if time.Since(began) != 0 {
+				t.Fatal("Serve waited for ctx after Close")
+			}
+			if i%2 == 0 && err != nil {
+				t.Errorf("Serve: %v", err)
+			}
+		})
+	}
+}
+
 func TestConfigValidation(t *testing.T) {
 	bad := []reflector.Config{
 		{Listeners: []netip.AddrPort{{}}},

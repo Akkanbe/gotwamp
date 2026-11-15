@@ -16,6 +16,7 @@ import (
 	"io"
 	mrand "math/rand/v2"
 	"net/netip"
+	"sync"
 	"time"
 
 	"github.com/Akkanbe/gotwamp/internal/stats"
@@ -63,7 +64,8 @@ type Config struct {
 	// from this address and port are accepted.
 	Target netip.AddrPort
 	// Source is the local address and port to bind. The zero value lets the
-	// system choose both. It is not used with WithConn.
+	// system choose both. An IPv4-mapped IPv6 address stands for its IPv4
+	// address. It is not used with WithConn.
 	Source netip.AddrPort
 	// Count is the number of packets of the run. Zero runs continuously,
 	// summarizing every Window, until the context is canceled.
@@ -121,8 +123,9 @@ type Config struct {
 	// DSCPECNMonitoring reads the S-DSCP-ECN octet at offset 41 of the
 	// replies (RFC 7750): the DSCP and ECN with which the test packets
 	// reached the reflector. The reflector must write it: a Light reflector
-	// configured for it, or a Full session that negotiated Modes bit 8.
-	// Replies shorter than 44 octets are then malformed.
+	// configured for it. Full runs reject it, since the Control-Client does
+	// not negotiate Modes bit 8. Replies shorter than 44 octets are then
+	// malformed.
 	DSCPECNMonitoring bool
 	// STAMP sends STAMP Session-Sender packets (RFC 8762 §4.2.1, TWAMP Light
 	// only): the 44-octet base with SSID, and the Padding, when not zero,
@@ -279,6 +282,10 @@ type Sender struct {
 	// the header is rewritten for every send.
 	packet []byte
 	used   bool
+	// closeOnce makes Close idempotent: closeErr is what the first Close
+	// returned.
+	closeOnce sync.Once
+	closeErr  error
 }
 
 // New validates cfg and opens the socket, unless one is given with
@@ -368,6 +375,9 @@ func normalize(cfg *Config, full bool) error {
 		return errors.New("sender: target address and port are required")
 	}
 	cfg.Target = netip.AddrPortFrom(cfg.Target.Addr().Unmap(), cfg.Target.Port())
+	if cfg.Source.IsValid() {
+		cfg.Source = netip.AddrPortFrom(cfg.Source.Addr().Unmap(), cfg.Source.Port())
+	}
 	if cfg.Source.IsValid() && cfg.Source.Addr().Is4() != cfg.Target.Addr().Is4() {
 		return fmt.Errorf("sender: source %v and target %v differ in address family", cfg.Source, cfg.Target)
 	}
@@ -390,6 +400,8 @@ func normalize(cfg *Config, full bool) error {
 		cfg.StatelessReflector = false
 	}
 	switch {
+	case cfg.DSCPECNMonitoring && full:
+		return errors.New("sender: dscp_ecn_monitoring is supported in light mode only")
 	case cfg.STAMP && full:
 		return errors.New("sender: stamp is for TWAMP Light; TWAMP Full negotiates its packets")
 	case cfg.STAMP && cfg.DSCPECNMonitoring:
@@ -406,6 +418,12 @@ func normalize(cfg *Config, full bool) error {
 		return fmt.Errorf("sender: ttl %d out of range 1-255", cfg.TTL)
 	case cfg.PaddingFill > PaddingZero:
 		return fmt.Errorf("sender: unknown padding fill %d", cfg.PaddingFill)
+	case cfg.Timestamping > tstamp.ModeHardware:
+		return fmt.Errorf("sender: unknown timestamping mode %v", cfg.Timestamping)
+	case cfg.ReadBuffer < 0:
+		return fmt.Errorf("sender: read buffer %d is negative", cfg.ReadBuffer)
+	case cfg.UserspaceError < 0 || cfg.KernelError < 0 || cfg.HardwareError < 0 || cfg.MethodError < 0:
+		return errors.New("sender: timestamping errors must not be negative")
 	}
 	return nil
 }
@@ -442,13 +460,15 @@ func (s *Sender) LocalAddr() netip.AddrPort {
 }
 
 // Close closes the socket the Sender opened. A socket given with WithConn
-// is left open.
+// is left open. Later calls return what the first one did.
 func (s *Sender) Close() error {
-	if !s.ownConn {
-		return nil
-	}
-	if err := s.conn.Close(); err != nil {
-		return fmt.Errorf("sender: close: %w", err)
-	}
-	return nil
+	s.closeOnce.Do(func() {
+		if !s.ownConn {
+			return
+		}
+		if err := s.conn.Close(); err != nil {
+			s.closeErr = fmt.Errorf("sender: close: %w", err)
+		}
+	})
+	return s.closeErr
 }

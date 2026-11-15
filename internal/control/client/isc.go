@@ -30,6 +30,10 @@ func (c *Client) StartN(ctx context.Context, sessions []*Session) ([]*Session, e
 	if !c.isc() || c.state == StateClosed || len(sessions) == 0 || !contains(c.pending, sessions) {
 		return nil, &Error{Stage: StageStart, Err: ErrState}
 	}
+	if err := c.pause(); err != nil {
+		return nil, err
+	}
+	defer c.resume()
 	ok, err := c.exchangeN(ctx, StageStart, wire.CommandStartNSessions, sessions)
 	c.pending = without(c.pending, ok)
 	c.active = append(c.active, ok...)
@@ -47,6 +51,10 @@ func (c *Client) StopN(ctx context.Context, sessions []*Session) ([]*Session, er
 	if !c.isc() || c.state == StateClosed || len(sessions) == 0 || !contains(append(c.active[:len(c.active):len(c.active)], c.pending...), sessions) {
 		return nil, &Error{Stage: StageStop, Err: ErrState}
 	}
+	if err := c.pause(); err != nil {
+		return nil, err
+	}
+	defer c.resume()
 	ok, err := c.exchangeN(ctx, StageStop, wire.CommandStopNSessions, sessions)
 	c.active = without(c.active, ok)
 	c.pending = without(c.pending, ok)
@@ -58,12 +66,9 @@ func (c *Client) StopN(ctx context.Context, sessions []*Session) ([]*Session, er
 
 // exchangeN sends cmd for sessions and reads acknowledgements until each
 // session has one. It returns the sessions acknowledged with Accept 0, and
-// an *Error for the first other Accept.
+// an *Error for the first other Accept. The caller owns pausing/resuming the
+// monitor so its session and state updates precede resumption.
 func (c *Client) exchangeN(ctx context.Context, stage Stage, cmd wire.Command, sessions []*Session) ([]*Session, error) {
-	if err := c.pause(); err != nil {
-		return nil, err
-	}
-	defer c.resume()
 	msg := wire.SessionControl{Command: cmd}
 	bySID := make(map[wire.SID]*Session, len(sessions))
 	for _, s := range sessions {

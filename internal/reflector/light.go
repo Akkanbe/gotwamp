@@ -80,7 +80,13 @@ type Light struct {
 	acl       []netip.Prefix
 	hook      Hook
 
-	serveOnce sync.Once
+	// mu guards the lifecycle fields below it.
+	mu      sync.Mutex
+	serving bool               // Serve has been called
+	closed  bool               // Close has been called
+	stop    context.CancelFunc // ends a running Serve; nil before Serve
+	served  chan struct{}      // closed when Serve returns; nil before Serve
+
 	closeOnce sync.Once
 	closeErr  error
 }
@@ -158,30 +164,59 @@ func (l *Light) Addrs() []netip.AddrPort {
 	return out
 }
 
-// Serve reflects packets until ctx is done, then closes the listeners and
-// returns. It may be called once.
+// Serve reflects packets until ctx is done or Close is called, then closes
+// the listeners and returns. It may be called once, and not after Close.
 func (l *Light) Serve(ctx context.Context) error {
-	started := false
-	l.serveOnce.Do(func() { started = true })
-	if !started {
+	ctx, stop := context.WithCancel(ctx)
+	defer stop()
+	l.mu.Lock()
+	switch {
+	case l.serving:
+		l.mu.Unlock()
 		return errors.New("light reflector: Serve called twice")
+	case l.closed:
+		l.mu.Unlock()
+		return errors.New("light reflector: Serve called after Close")
 	}
+	served := make(chan struct{})
+	l.serving, l.stop, l.served = true, stop, served
+	l.mu.Unlock()
+	defer close(served)
+
 	var wg sync.WaitGroup
 	for _, ln := range l.listeners {
 		wg.Go(func() { l.serveListener(ln) })
 	}
-	sweepCtx, stopSweep := context.WithCancel(context.Background())
-	wg.Go(func() { l.sweep(sweepCtx) })
+	wg.Go(func() { l.sweep(ctx) })
 
 	<-ctx.Done()
-	stopSweep()
-	err := l.Close()
+	err := l.closeListeners()
 	wg.Wait()
 	return err
 }
 
-// Close closes every listener. Serve calls it when ctx is done.
+// Close closes every listener and, when Serve is running, ends it and waits
+// for it to return. It may be called before Serve, more than once and
+// concurrently, but not from a Hook: Serve waits for the goroutine that runs
+// the Hook.
 func (l *Light) Close() error {
+	l.mu.Lock()
+	l.closed = true
+	stop, served := l.stop, l.served
+	l.mu.Unlock()
+	if stop != nil {
+		stop()
+	}
+	err := l.closeListeners()
+	if served != nil {
+		<-served
+	}
+	return err
+}
+
+// closeListeners closes every listener socket once, and returns the same
+// result on later calls.
+func (l *Light) closeListeners() error {
 	l.closeOnce.Do(func() {
 		var errs []error
 		for _, ln := range l.listeners {
