@@ -37,18 +37,27 @@ func preflightConfig(dialed, listened *bool) FullConfig {
 func TestFullPreflightBeforeIO(t *testing.T) {
 	for name, tc := range map[string]struct {
 		edit  func(*Config, *FullConfig)
-		setup bool // the error is a control error of the setup stage
+		stage client.Stage // of the control error; 0 for another error
 	}{
-		"missing passphrase": {func(_ *Config, f *FullConfig) { f.Modes = wire.ModeEncrypted; f.KeyID = "test" }, true},
+		"missing passphrase": {func(_ *Config, f *FullConfig) { f.Modes = wire.ModeEncrypted; f.KeyID = "test" }, client.StageSetup},
 		"key id too long": {func(_ *Config, f *FullConfig) {
 			f.Modes, f.KeyID, f.Passphrase = wire.ModeAuthenticated, string(make([]byte, 81)), []byte("test")
-		}, true},
-		"not a security mode":      {func(_ *Config, f *FullConfig) { f.Modes = 1 << 20 }, true},
-		"unsupported feature":      {func(_ *Config, f *FullConfig) { f.Features = wire.ModePTPv2Timestamp }, true},
-		"unknown timestamping":     {func(c *Config, _ *FullConfig) { c.Timestamping = 255 }, false},
-		"negative read buffer":     {func(c *Config, _ *FullConfig) { c.ReadBuffer = -1 }, false},
-		"negative method error":    {func(c *Config, _ *FullConfig) { c.MethodError = -1 }, false},
-		"negative userspace error": {func(c *Config, _ *FullConfig) { c.UserspaceError = -1 }, false},
+		}, client.StageSetup},
+		"not a security mode":                    {func(_ *Config, f *FullConfig) { f.Modes = 1 << 20 }, client.StageSetup},
+		"unsupported feature":                    {func(_ *Config, f *FullConfig) { f.Features = wire.ModePTPv2Timestamp }, client.StageSetup},
+		"unknown timestamping":                   {func(c *Config, _ *FullConfig) { c.Timestamping = 255 }, 0},
+		"negative read buffer":                   {func(c *Config, _ *FullConfig) { c.ReadBuffer = -1 }, 0},
+		"negative method error":                  {func(c *Config, _ *FullConfig) { c.MethodError = -1 }, 0},
+		"negative userspace error":               {func(c *Config, _ *FullConfig) { c.UserspaceError = -1 }, 0},
+		"padding to reflect without the feature": {func(_ *Config, f *FullConfig) { f.PaddingToReflect = 1 }, client.StageRequest},
+		"octets to reflect without the feature":  {func(_ *Config, f *FullConfig) { f.OctetsToReflect = 1 }, client.StageRequest},
+		"padding too short in every mode": {func(c *Config, f *FullConfig) {
+			c.Padding, f.Features, f.PaddingToReflect = 8, wire.ModeReflectOctets|wire.ModeSymmetricalSize, 8
+		}, client.StageRequest},
+		"padding too short for the authenticated mode": {func(c *Config, f *FullConfig) {
+			c.Padding, f.Features, f.PaddingToReflect = 30, wire.ModeReflectOctets, 1
+			f.Modes, f.KeyID, f.Passphrase = wire.ModeAuthenticated, "test", []byte("test secret")
+		}, client.StageRequest},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var dialed, listened bool
@@ -58,21 +67,41 @@ func TestFullPreflightBeforeIO(t *testing.T) {
 			if err == nil || dialed || listened {
 				t.Fatalf("error=%v dialed=%v listened=%v", err, dialed, listened)
 			}
-			var ce *client.Error
-			if isSetup := errors.As(err, &ce) && ce.Stage == client.StageSetup; isSetup != tc.setup {
-				t.Errorf("error %v: setup stage %v, want %v", err, isSetup, tc.setup)
+			var stage client.Stage
+			if ce, ok := errors.AsType[*client.Error](err); ok {
+				stage = ce.Stage
+			}
+			if stage != tc.stage {
+				t.Errorf("error %v: stage %v, want %v", err, stage, tc.stage)
 			}
 		})
 	}
 }
 
+// TestFullPreflightAccepts checks that the checks before dialing pass every
+// configuration that some negotiation can accept.
 func TestFullPreflightAccepts(t *testing.T) {
-	var dialed, listened bool
-	cfg, fc := DefaultConfig(netip.AddrPort{}), preflightConfig(&dialed, &listened)
-	fc.Modes, fc.KeyID, fc.Passphrase = wire.ModeEncrypted|wire.ModeUnauthenticated, "test", []byte("test secret")
-	fc.Features = client.FeatureModes
-	if _, err := RunFull(t.Context(), cfg, fc); !errors.Is(err, errDialed) || !dialed {
-		t.Fatalf("error=%v dialed=%v, want the dial error", err, dialed)
+	for _, tc := range []struct {
+		name            string
+		modes, features wire.Modes
+		padding         int
+		toReflect       uint16
+	}{
+		{"every feature", wire.ModeEncrypted | wire.ModeUnauthenticated, client.FeatureModes, 27, 0},
+		{"one mode of several fits", wire.ModeAuthenticated | wire.ModeUnauthenticated, wire.ModeReflectOctets, 30, 1},
+		{"symmetrical size", wire.ModeAuthenticated, wire.ModeReflectOctets | wire.ModeSymmetricalSize, 8, 1},
+		{"mixed mode sends unauthenticated test packets", wire.ModeMixed, wire.ModeReflectOctets, 30, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var dialed, listened bool
+			cfg, fc := DefaultConfig(netip.AddrPort{}), preflightConfig(&dialed, &listened)
+			cfg.Padding = tc.padding
+			fc.Modes, fc.Features, fc.PaddingToReflect = tc.modes, tc.features, tc.toReflect
+			fc.KeyID, fc.Passphrase = "test", []byte("test secret")
+			if _, err := RunFull(t.Context(), cfg, fc); !errors.Is(err, errDialed) || !dialed {
+				t.Fatalf("error=%v dialed=%v, want the dial error", err, dialed)
+			}
+		})
 	}
 }
 

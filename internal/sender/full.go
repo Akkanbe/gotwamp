@@ -136,6 +136,36 @@ func (fc FullConfig) validate() error {
 	return nil
 }
 
+// checkReflection rejects Reflect Octets fields that no negotiation can
+// accept (RFC 6038 §4.2): set without asking for Reflect Octets, or with a
+// padding too short in every security mode fc.Modes allows. The mode and
+// features the server negotiates are checked again in the session request.
+func (fc FullConfig) checkReflection(padding int) error {
+	if fc.OctetsToReflect == 0 && fc.PaddingToReflect == 0 {
+		return nil
+	}
+	if !fc.Features.Has(wire.ModeReflectOctets) {
+		return errors.New("octets to reflect need the reflect octets feature")
+	}
+	layout := wire.PaddingLayout{SymmetricalSize: fc.Features.Has(wire.ModeSymmetricalSize), ReflectLength: fc.PaddingToReflect}
+	modes := fc.Modes
+	if modes == 0 {
+		modes = wire.ModeUnauthenticated
+	}
+	var errs []error
+	for _, m := range []wire.SecurityMode{wire.SecurityUnauthenticated, wire.SecurityAuthenticated, wire.SecurityEncrypted, wire.SecurityMixed} {
+		if !modes.Has(m.Mode()) {
+			continue
+		}
+		err := layout.Validate(m.TestMode(), uint32(padding)) //nolint:gosec // G115: 0..maxPadding, checked by normalize
+		if err == nil {
+			return nil
+		}
+		errs = append(errs, fmt.Errorf("%v: %w", m, err))
+	}
+	return fmt.Errorf("padding to reflect: %w", errors.Join(errs...))
+}
+
 // RunFull carries out one TWAMP Full run on its own control connection
 // (SPEC §5.6): it connects, binds the Sender Port, negotiates the session,
 // starts it, runs the Session-Sender as Run does, and sends Stop-Sessions,
@@ -153,7 +183,8 @@ func RunFull(ctx context.Context, cfg Config, fc FullConfig, opts ...Option) (Su
 		return Summary{}, err
 	}
 	// The security settings fail here rather than after connecting, with
-	// the stage Handshake gives them.
+	// the stage Handshake gives them; the reflection settings below keep
+	// the stage of the session request.
 	if err := (client.Config{Modes: fc.Modes, KeyID: fc.KeyID, Passphrase: fc.Passphrase, Features: fc.Features}).Validate(); err != nil {
 		return Summary{}, &client.Error{Stage: client.StageSetup, Err: err}
 	}
@@ -161,6 +192,9 @@ func RunFull(ctx context.Context, cfg Config, fc FullConfig, opts ...Option) (Su
 	check.Target = fc.Server
 	if err := normalize(&check, true); err != nil {
 		return Summary{}, err
+	}
+	if err := fc.checkReflection(check.Padding); err != nil {
+		return Summary{}, &client.Error{Stage: client.StageRequest, Err: err}
 	}
 	cfg.Timeout = check.Timeout
 
