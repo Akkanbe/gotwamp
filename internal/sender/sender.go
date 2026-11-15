@@ -16,6 +16,7 @@ import (
 	"io"
 	mrand "math/rand/v2"
 	"net/netip"
+	"sync"
 	"time"
 
 	"github.com/Akkanbe/gotwamp/internal/stats"
@@ -279,6 +280,10 @@ type Sender struct {
 	// the header is rewritten for every send.
 	packet []byte
 	used   bool
+	// closeOnce makes Close idempotent: closeErr is what the first Close
+	// returned.
+	closeOnce sync.Once
+	closeErr  error
 }
 
 // New validates cfg and opens the socket, unless one is given with
@@ -442,13 +447,15 @@ func (s *Sender) LocalAddr() netip.AddrPort {
 }
 
 // Close closes the socket the Sender opened. A socket given with WithConn
-// is left open.
+// is left open. Later calls return what the first one did.
 func (s *Sender) Close() error {
-	if !s.ownConn {
-		return nil
-	}
-	if err := s.conn.Close(); err != nil {
-		return fmt.Errorf("sender: close: %w", err)
-	}
-	return nil
+	s.closeOnce.Do(func() {
+		if !s.ownConn {
+			return
+		}
+		if err := s.conn.Close(); err != nil {
+			s.closeErr = fmt.Errorf("sender: close: %w", err)
+		}
+	})
+	return s.closeErr
 }
