@@ -26,6 +26,9 @@ import (
 // fakeSession records what the server does to a session.
 type fakeSession struct {
 	spec server.SessionSpec
+	// hold, when set, makes Close close closing and wait until hold is
+	// closed, like a session whose UDP reader is slow to stop.
+	hold, closing chan struct{}
 
 	mu      sync.Mutex
 	startAt time.Time
@@ -41,7 +44,16 @@ func (s *fakeSession) Stop(until time.Time) {
 	s.mu.Unlock()
 }
 
-func (s *fakeSession) Close() error { s.mu.Lock(); s.closed++; s.mu.Unlock(); return nil }
+func (s *fakeSession) Close() error {
+	if s.hold != nil {
+		close(s.closing)
+		<-s.hold
+	}
+	s.mu.Lock()
+	s.closed++
+	s.mu.Unlock()
+	return nil
+}
 
 func (s *fakeSession) Stats() server.SessionStats {
 	s.mu.Lock()
@@ -62,7 +74,8 @@ func (s *fakeSession) state() (start, stop time.Time, closed int) {
 type fakeHandler struct {
 	mu       sync.Mutex
 	inUse    map[uint16]bool
-	err      error // returned for every port not in inUse, when set
+	err      error         // returned for every port not in inUse, when set
+	hold     chan struct{} // given to every session opened, when set
 	sessions []*fakeSession
 	tried    []uint16
 }
@@ -78,6 +91,9 @@ func (h *fakeHandler) Open(spec server.SessionSpec) (server.Session, error) {
 		return nil, h.err
 	}
 	s := &fakeSession{spec: spec}
+	if h.hold != nil {
+		s.hold, s.closing = h.hold, make(chan struct{})
+	}
 	h.sessions = append(h.sessions, s)
 	return s, nil
 }
@@ -823,6 +839,79 @@ func TestServeListenerError(t *testing.T) {
 	if err := hs.s.Serve(t.Context(), ln); err == nil {
 		t.Error("Serve on a closed listener succeeded")
 	}
+}
+
+// pipeListener hands out one connection, then waits until it is closed.
+type pipeListener struct {
+	conn   net.Conn
+	closed chan struct{}
+	once   sync.Once
+}
+
+func (l *pipeListener) Accept() (net.Conn, error) {
+	if c := l.conn; c != nil {
+		l.conn = nil
+		return c, nil
+	}
+	<-l.closed
+	return nil, net.ErrClosed
+}
+
+func (l *pipeListener) Close() error {
+	l.once.Do(func() { close(l.closed) })
+	return nil
+}
+
+func (l *pipeListener) Addr() net.Addr { return net.TCPAddrFromAddrPort(serverAddr) }
+
+// TestServeWaitsForDrainRelease shuts the server down while the drain timer
+// of a closed connection is still closing its session. The timer has taken
+// the session out of the server's table already, so Serve must wait for the
+// timer itself.
+func TestServeWaitsForDrainRelease(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		hs := newHarness(t, server.Config{})
+		hs.h.hold = make(chan struct{})
+		c, s := net.Pipe()
+		ln := &pipeListener{
+			conn:   addrConn{s, net.TCPAddrFromAddrPort(serverAddr), net.TCPAddrFromAddrPort(clientAddr)},
+			closed: make(chan struct{}),
+		}
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		served := make(chan error, 1)
+		go func() { served <- hs.s.Serve(ctx, ln) }()
+
+		r := hs.rawHandshakeOn(addrConn{c, net.TCPAddrFromAddrPort(clientAddr), net.TCPAddrFromAddrPort(serverAddr)})
+		req := validRequest()
+		req.Timeout = ntptime.New(5, 0)
+		r.request(req)
+		r.send((&wire.StartSessions{}).Append(nil))
+		r.recv(wire.StartAckSize)
+		_ = r.conn.Close()
+		time.Sleep(5 * time.Second) // the drain timer fires
+		sess := hs.h.session(0)
+		<-sess.closing
+		if n := len(hs.s.Sessions()); n != 0 {
+			t.Fatalf("%d sessions listed while the drain timer releases the last one", n)
+		}
+
+		cancel()
+		synctest.Wait()
+		select {
+		case err := <-served:
+			t.Errorf("Serve returned (%v) while a released session was still closing", err)
+			served <- err
+		default:
+		}
+		close(hs.h.hold)
+		if err := <-served; err != nil {
+			t.Errorf("Serve: %v", err)
+		}
+		if _, _, closed := sess.state(); closed != 1 {
+			t.Errorf("session closed %d times, want 1", closed)
+		}
+	})
 }
 
 func TestConfig(t *testing.T) {
