@@ -74,6 +74,7 @@ Work in progress toward the first release (v0.1.0).
 - CLI error messages no longer show the gRPC code name. `DeadlineExceeded` points to `--rpc-timeout` instead.
 - systemd unit: a configuration error (exit status 1) is not restarted over and over (`RestartPreventExitStatus=1`). The container image has a HEALTHCHECK.
 - Filling in the build information (version / commit / Go version) moved to `internal/buildinfo`, shared by gotwampd and the CLI. ULID generation is in `internal/ulid` alone.
+- Building needs Go 1.27 (the `go` directive is 1.27.4; it was 1.26.9). The container images build with `golang:1.27`, and `make tools` no longer needs a toolchain switch to install declscope.
 
 ### Fixed
 
@@ -104,11 +105,12 @@ Found by the reviews from the maintenance and operations point of view (A: stati
 
 ### Security
 
-- Go 1.26.9 (`go` directive) and golang.org/x/net v0.61.0: fixes GO-2026-6607 (crypto/tls), GO-2026-6608 (net/textproto), GO-2026-6611 / 6612 / 6613 / 6617 (net/http and the HTTP/2 framer that gRPC uses). govulncheck reports nothing.
+- Go 1.26.9 (`go` directive) and golang.org/x/net v0.61.0: fixes GO-2026-6607 (crypto/tls), GO-2026-6608 (net/textproto), GO-2026-6611 / 6612 / 6613 / 6617 (net/http and the HTTP/2 framer that gRPC uses).
+- Go 1.27.4 (`go` directive): fixes GO-2026-6809 (crypto/x509) and GO-2026-6859 (net/http).
+- `google.golang.org/grpc` v1.85.0: carries the fix for GO-2026-6443 (the affected path was not called). govulncheck reports nothing.
 
 ### TODO
 
 - OTLP export (ADR 0010; to be added as an exporter implementing `store.ResultSink`)
-- Update `google.golang.org/grpc` to v1.85.0 once released (GO-2026-6443 was fixed in its development branch; govulncheck v1.8.0 no longer reports it against v1.84.0, and the current code does not call the affected path)
 - Report the NIC timestamps discarded in hardware timestamping (`HardwareRejected`, a sign of an unsynchronized PHC) in metrics or logs (ADR 0014)
 - Check interoperability of STAMP / RFC 6038 / RFC 5938 with real devices (SR Linux and others); perfSONAR does not support them

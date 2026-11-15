@@ -37,7 +37,7 @@ make staging-down                                    # remove containers, networ
 Debian with iproute2, tcpdump, curl and ping), then waits until every
 container is healthy. Run it again after changing the code or the
 configuration; it rebuilds the image and recreates the containers. The first
-build takes a few minutes. The build pulls the latest `golang:1.26` image:
+build takes a few minutes. The build pulls the latest `golang:1.27` image:
 the Go image sets `GOTOOLCHAIN=local`, so a cached image older than the `go`
 line of `go.mod` cannot build. Without make, use
 `docker compose -f deploy/staging/docker-compose.yml build --pull` and then

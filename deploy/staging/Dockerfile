@@ -6,7 +6,7 @@
 #
 #   docker compose -f deploy/staging/docker-compose.yml build
 
-ARG GO_VERSION=1.26
+ARG GO_VERSION=1.27
 
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION} AS build
 ARG TARGETOS

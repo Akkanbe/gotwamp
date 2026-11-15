@@ -106,7 +106,7 @@ Status as of 2026-10-14 (v0.2 of this plan). "Not yet" marks the parts that are 
 
 | Category | Tool | Notes |
 |------|--------|------|
-| Language | Go 1.26 (development machine: go1.26.7 linux/amd64) | The `go` directive in `go.mod` is 1.26. No CGO required (`CGO_ENABLED=0`) |
+| Language | Go 1.27 (development machine: go1.27.4 linux/amd64) | The `go` directive in `go.mod` is 1.27. No CGO required (`CGO_ENABLED=0`) |
 | Main dependencies | `google.golang.org/grpc`, `google.golang.org/protobuf`, `github.com/spf13/cobra`, `github.com/prometheus/client_golang`, `golang.org/x/sys`, `gopkg.in/yaml.v3` | The protocol layer (`internal/twamp`) uses the standard library only |
 | proto generation | `buf` (`buf generate`, `buf lint`, `buf breaking`) | `protoc-gen-go`, `protoc-gen-go-grpc` |
 | Static analysis | `golangci-lint`, `go vet`, `govulncheck`, `gofumpt` | Required in CI |
@@ -406,8 +406,7 @@ Ordered by priority. Each item closes DoD clauses that §6 lists as not met.
     reported `commit none`)
   - Decide where the container image is published, and publish it from the same workflow
   - Wire `reflector.control.enforce_start_time` (SPEC CMP-26, Appendix A), or remove the key from SPEC
-  - Update `google.golang.org/grpc` to v1.85.0 or later once it is released (GO-2026-6443). Until then, keep the CHANGELOG note that the
-    affected path is not called
+  - Update `google.golang.org/grpc` to v1.85.0 or later once it is released (GO-2026-6443): done 2026-11-14 (v1.85.0)
   - Install the deb on a host with systemd: `systemctl enable --now`, binding port 862 with CAP_NET_BIND_SERVICE only, adjtimex under
     the unit's `SystemCallFilter`
   - Move the CHANGELOG "Unreleased" section to `[0.1.0]`

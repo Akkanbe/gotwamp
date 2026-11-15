@@ -12,7 +12,7 @@
 # network namespace; then add --cap-add NET_BIND_SERVICE and run as root, or
 # move the listeners above 1024.
 
-ARG GO_VERSION=1.26
+ARG GO_VERSION=1.27
 
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION} AS build
 ARG TARGETOS

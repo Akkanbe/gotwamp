@@ -33,7 +33,7 @@ and reflects the test packets of other TWAMP implementations.
 
 ### go install
 
-Go 1.26 or later:
+Go 1.27 or later:
 
 ```sh
 go install github.com/Akkanbe/gotwamp/cmd/gotwampd@latest
@@ -209,7 +209,7 @@ default and its validation are in [docs/ops/config.md](docs/ops/config.md).
 
 ## Development
 
-Requirements: Go 1.26 or later and GNU make. Tests with `-race` need a C compiler (cgo).
+Requirements: Go 1.27 or later and GNU make. Tests with `-race` need a C compiler (cgo).
 
 ```sh
 make tools   # install the development tools into GOBIN (once)

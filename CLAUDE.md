@@ -30,7 +30,7 @@ cmd → internal/{daemon,cli} → internal/{schedule,store,export,config} → in
 
 ## Quality criteria
 
-- Go 1.26. `CGO_ENABLED=0`. Linux-only code carries `//go:build linux`.
+- Go 1.27. `CGO_ENABLED=0`. Linux-only code carries `//go:build linux`.
 - Formatting: `gofumpt`. Linting: `golangci-lint` + `go vet` + **`declscope`**.
 - `declscope` is a required lint. Run `declscope shrink ./...` and then `declscope ./...`, and keep both clean.
   Follow the skill `declscope-adoption` (`~/.claude/skills/declscope-adoption/SKILL.md`) for its use and for
