@@ -23,6 +23,13 @@ const (
 
 // Store is the query side of a result store. A persistent implementation
 // can replace Memory behind it (SPEC §13).
+//
+// A store keeps the instant of each time, not its Location or monotonic
+// reading. Events still held in memory, those of Memory and those a
+// persistent store has not yet had to read back, carry the times they were
+// published with. The times read back from a database, and the T4 of a
+// PacketSample, are in UTC, whatever the time zone of the host. Compare
+// times with Equal, Before or UnixNano, not by their Location.
 type Store interface {
 	ResultSink
 	// Recent returns up to n of the latest summaries and run errors of
@@ -207,14 +214,14 @@ func sampleOf(p sender.PacketResult) PacketSample {
 
 // Result returns the sender.PacketResult the sample was made from, with
 // what the sample keeps: the sequence numbers, T4, the TTLs, the DSCP and
-// ECN, the delays and flags. T1–T3, the Error Estimates, the clock offset
-// and the hop counts are not kept and come back zero.
+// ECN, the delays and flags, with T4 in UTC. T1–T3, the Error Estimates,
+// the clock offset and the hop counts are not kept and come back zero.
 func (p PacketSample) Result() sender.PacketResult {
 	has := func(bit uint8) bool { return p.Flags&bit != 0 }
 	return sender.PacketResult{
 		Window: int(p.Window),
 		Record: stats.PacketRecord{
-			SenderSeq: p.Seq, ReflectorSeq: p.ReflectorSeq, T4: time.Unix(0, p.T4),
+			SenderSeq: p.Seq, ReflectorSeq: p.ReflectorSeq, T4: time.Unix(0, p.T4).UTC(),
 			SenderTTL: p.SenderTTL, ReplyTTL: p.ReplyTTL, DSCPECN: p.DSCPECN, HasDSCPECN: has(packetDSCPECN),
 		},
 		Result: stats.Result{

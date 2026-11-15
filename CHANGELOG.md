@@ -103,6 +103,7 @@ Found by the reviews from the maintenance and operations point of view (A: stati
 - Light reflector: `Close` did not stop a running `Serve`, which kept waiting for its context. `Close` now ends `Serve` and waits for its workers, and may be called repeatedly or concurrently (#1).
 - Full reflector: a shutdown while the drain timer of a closed control connection was releasing a session could return before that session's UDP reader had stopped (#1).
 - Tests: the kernel receive timestamp tests waited for nothing before measuring, and could see packets without a timestamp while Linux was still enabling receive timestamps (#1).
+- SQLite result store: times read back from the database came back in the local zone of the host, and the times in summaries in the zone they were written in (the tests failed outside UTC). They are now read back in UTC.
 
 ### Security
 

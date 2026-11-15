@@ -89,8 +89,9 @@ func richSummary(i int) *sender.Summary {
 	}
 }
 
-// sameEvent compares events through their JSON, which ignores time
-// locations and monotonic readings.
+// sameEvent compares events through their JSON, which ignores monotonic
+// readings but not the offsets of the times: the store reads the times
+// back in UTC (TestTimesInUTC), as the cases write them.
 func sameEvent(t *testing.T, got, want store.Event) {
 	t.Helper()
 	g, _ := json.Marshal(struct {
@@ -157,6 +158,52 @@ func TestRestart(t *testing.T) {
 	if all[0].Session != all[5].Session || all[0].Session.Definition != info.Definition {
 		t.Errorf("descriptions not shared or definition lost: %+v", all[0].Session)
 	}
+}
+
+// TestTimesInUTC checks that the times read back from the database are in
+// UTC, whatever the zone they were published in and that of the host. The
+// Location itself is checked, so a time in time.Local fails on a UTC host
+// too.
+func TestTimesInUTC(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "results.db")
+	at := storetest.T0.In(time.FixedZone("JST", 9*60*60))
+	sum := richSummary(0)
+	sum.StartedAt, sum.EndedAt = at.Add(-10*time.Second), at
+	published := []store.Event{
+		{Kind: store.EventRunSummary, Time: at, Session: storetest.Alpha, RunID: "r", Summary: sum},
+		{Kind: store.EventRunError, Time: at.Add(time.Second), Session: storetest.Alpha, RunID: "e", Error: &store.RunError{Stage: "connect"}},
+	}
+	s, err := sqlite.Open(sqlite.Config{Path: path, Retention: -1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range published {
+		s.Publish(e)
+	}
+	inUTC := func(how, field string, got, want time.Time) {
+		t.Helper()
+		if got.Location() != time.UTC || !got.Equal(want) {
+			t.Errorf("%s: %s = %v (time.Local %t), want %v in time.UTC", how, field, got, got.Location() == time.Local, want)
+		}
+	}
+	check := func(how string, events []store.Event) {
+		t.Helper()
+		if len(events) != len(published) || events[0].Summary == nil {
+			t.Fatalf("%s = %+v, want the %d events published", how, events, len(published))
+		}
+		for i, e := range events {
+			inUTC(how, fmt.Sprintf("event %d Time", i), e.Time, published[i].Time)
+		}
+		inUTC(how, "StartedAt", events[0].Summary.StartedAt, sum.StartedAt)
+		inUTC(how, "EndedAt", events[0].Summary.EndedAt, sum.EndedAt)
+	}
+	check("Range", s.Range("alpha", storetest.T0, storetest.T0.Add(time.Hour)))
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s = open(t, sqlite.Config{Path: path, Retention: -1})
+	check("Recent after a restart", s.Recent("alpha", 0))
+	check("Range after a restart", s.Range("alpha", storetest.T0, storetest.T0.Add(time.Hour)))
 }
 
 func TestRetention(t *testing.T) {

@@ -101,7 +101,9 @@ func encodePayload(c *compactPayload, e *store.Event) ([]byte, error) {
 }
 
 // decodePayload fills the Summary or the RunError of e from data, in either
-// payload format.
+// payload format. The times of a Summary come back in UTC: the JSON keeps
+// the offset they were written with, which encoding/json reads as the
+// host's Local zone when it matches it.
 func decodePayload(e *store.Event, payload []byte) error {
 	data, err := payloadJSON(payload)
 	if err != nil {
@@ -110,7 +112,11 @@ func decodePayload(e *store.Event, payload []byte) error {
 	switch e.Kind {
 	case store.EventRunSummary, store.EventWindowSummary:
 		e.Summary = new(sender.Summary)
-		return json.Unmarshal(data, e.Summary)
+		if err := json.Unmarshal(data, e.Summary); err != nil {
+			return err
+		}
+		e.Summary.StartedAt, e.Summary.EndedAt = e.Summary.StartedAt.UTC(), e.Summary.EndedAt.UTC()
+		return nil
 	case store.EventRunError:
 		e.Error = new(store.RunError)
 		return json.Unmarshal(data, e.Error)

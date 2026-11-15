@@ -111,8 +111,8 @@ func TestPacketSample(t *testing.T) {
 	}
 	// Back to a PacketResult: everything the sample keeps survives.
 	back := want.Result()
-	if !back.Record.T4.Equal(t0) {
-		t.Errorf("T4 %v", back.Record.T4)
+	if !back.Record.T4.Equal(t0) || back.Record.T4.Location() != time.UTC {
+		t.Errorf("T4 %v (time.Local %t), want %v in time.UTC", back.Record.T4, back.Record.T4.Location() == time.Local, t0)
 	}
 	back.Record.T4 = p.Record.T4
 	if back != p {

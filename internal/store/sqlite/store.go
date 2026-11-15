@@ -453,7 +453,7 @@ type row struct {
 
 // query reads results, sharing one SessionInfo per description. The rows
 // are read to the end first: the one connection serves the descriptions
-// next.
+// next. The times read are in UTC, whatever the time zone of the host.
 func (s *Store) query(q string, args ...any) ([]store.Event, error) {
 	rows, err := s.db.Query(q, args...)
 	if err != nil {
@@ -470,7 +470,7 @@ func (s *Store) query(q string, args ...any) ([]store.Event, error) {
 			_ = rows.Close()
 			return nil, err
 		}
-		r.e.Kind, r.e.Time = store.EventKind(kind), time.Unix(0, ns) //nolint:gosec // G115: kinds written from store.EventKind
+		r.e.Kind, r.e.Time = store.EventKind(kind), time.Unix(0, ns).UTC() //nolint:gosec // G115: kinds written from store.EventKind
 		read = append(read, r)
 	}
 	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
