@@ -511,7 +511,7 @@ The Client treats every non-zero value as a failure and records the value in the
 
 - While ACTIVE, nothing is sent on the control connection (RFC 4656 §3.4). However, reception continues in order to detect disconnection by the Server
 - The default is one control connection and one session per run. Multiple sessions on the same connection and connection reuse are deferred (§13)
-- There is a setting to wait `end_delay` (default 0s; twping uses 1s) before sending Stop-Sessions
+- There is a setting to wait `end_delay` (default 0s; twping uses 1s) before sending Stop-Sessions. Loss of the control connection also ends the wait. The summary of a bounded run is reported after Stop-Sessions, and is invalid when the control connection was lost or Stop-Sessions failed
 
 Client behavior when Individual Session Control (RFC 5938) has been negotiated:
 

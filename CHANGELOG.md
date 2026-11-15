@@ -94,6 +94,13 @@ Found by the reviews from the maintenance and operations point of view (A: stati
 - Component tests: tcpdump was left running after a failure.
 - Light reflector: a wildcard listener replied from the address the route chose rather than from the destination it was reached at (senders on multihomed hosts discarded the replies).
 - Full reflector: sessions whose padding did not fit max_packet_size were accepted and lost every packet (now refused with Accept 3).
+- Sender (Full): invalid security settings, an unknown timestamping mode, a negative read buffer or timestamping error, DSCP/ECN monitoring, and octets or padding to reflect that no negotiation can accept are now rejected before the control connection is opened, with the same control error stage as before (setup or request) (#1).
+- Sender (Full): the summary of a bounded run, and those of aborted windows, were reported before EndDelay and Stop-Sessions could fail. They are now reported afterwards, marked invalid when the control connection was lost or Stop-Sessions failed; a control connection lost during EndDelay ends the wait at once (#1).
+- Sender: an IPv4-mapped source address was refused with an IPv4 target, and a second `Close` returned an error (#1).
+- ISC control client: a server closing the control connection after the Stop-N-Ack of the last session was reported as a lost connection (#1).
+- Light reflector: `Close` did not stop a running `Serve`, which kept waiting for its context. `Close` now ends `Serve` and waits for its workers, and may be called repeatedly or concurrently (#1).
+- Full reflector: a shutdown while the drain timer of a closed control connection was releasing a session could return before that session's UDP reader had stopped (#1).
+- Tests: the kernel receive timestamp tests waited for nothing before measuring, and could see packets without a timestamp while Linux was still enabling receive timestamps (#1).
 
 ### Security
 
