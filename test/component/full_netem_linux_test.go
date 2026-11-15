@@ -186,7 +186,17 @@ func TestFullDecodedByTshark(t *testing.T) {
 	}
 
 	port := strconv.Itoa(int(sum.Remote.Port()))
-	out, err := exec.Command("tshark", "-r", pcap, "-d", "udp.port=="+port+",twamp.test").CombinedOutput()
+	// The capture goes to tshark on its standard input. tcpdump gives the
+	// file to its unprivileged user, and on the Ubuntu 26 runners tshark,
+	// although root, is refused when it opens that path itself ("You don't
+	// have permission to read the file").
+	data, err := os.ReadFile(pcap)
+	if err != nil {
+		t.Fatalf("read the capture: %v", err)
+	}
+	decode := exec.Command("tshark", "-r", "-", "-d", "udp.port=="+port+",twamp.test")
+	decode.Stdin = bytes.NewReader(data)
+	out, err := decode.CombinedOutput()
 	if err != nil {
 		logLines(t, "tshark: ", string(out))
 		t.Fatalf("tshark: %v", err)

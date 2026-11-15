@@ -93,6 +93,7 @@ Found by the reviews from the maintenance and operations point of view (A: stati
 - Reflector: persistent socket errors logged up to 100 Warn lines a second (now thinned to once a minute, with the number of lines left out).
 - Reflector: the default listener list was shared between configurations (a change by a caller could leak into the defaults).
 - Component tests: tcpdump was left running after a failure.
+- Component tests: tshark could not open the capture file on the Ubuntu 26 runners (the capture is now piped to it).
 - Light reflector: a wildcard listener replied from the address the route chose rather than from the destination it was reached at (senders on multihomed hosts discarded the replies).
 - Full reflector: sessions whose padding did not fit max_packet_size were accepted and lost every packet (now refused with Accept 3).
 - Sender (Full): invalid security settings, an unknown timestamping mode, a negative read buffer or timestamping error, DSCP/ECN monitoring, and octets or padding to reflect that no negotiation can accept are now rejected before the control connection is opened, with the same control error stage as before (setup or request) (#1).
