@@ -33,8 +33,11 @@ cmd → internal/{daemon,cli} → internal/{schedule,store,export,config} → in
 - Go 1.27. `CGO_ENABLED=0`. Linux-only code carries `//go:build linux`.
 - Formatting: `gofumpt`. Linting: `golangci-lint` + `go vet` + **`declscope`**.
 - `declscope` is a required lint. Run `declscope shrink ./...` and then `declscope ./...`, and keep both clean.
-  Follow the skill `declscope-adoption` (`~/.claude/skills/declscope-adoption/SKILL.md`) for its use and for
-  fixing its diagnostics.
+  Follow the skills in this repository for its use and for fixing its diagnostics: `declscope-authoring`
+  (`.claude/skills/declscope-authoring/SKILL.md`) for everyday work, and `declscope-adoption`
+  (`.claude/skills/declscope-adoption/SKILL.md`) for configuration and baselines. They are the copies that the
+  pinned declscope version embeds; a copy under `~/.claude/skills` may be older and name directives that no
+  longer exist.
   The principle: one file = one namespace. Declarations are private to their file by default. Mark only the
   declarations other files use with `//declscope:shared // <reason>`. Fix diagnostics with structure
   (splitting or merging files), not with a flood of directives.
