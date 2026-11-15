@@ -176,10 +176,10 @@ func (fc FullConfig) checkReflection(padding int) error {
 // *client.Error, whose Stage and Accept tell what failed (SPEC §10.4 exit
 // code 4). A canceled ctx returns its error with the aborted summary; once
 // the packets are all decided, a cancellation only cuts EndDelay short.
-// When the control connection is lost before Stop-Sessions is
-// acknowledged, the summary is marked invalid and comes with an error
-// matching client.ErrControlLost; a failed Stop-Sessions marks it invalid
-// too.
+// When the control connection is lost before Stop-Sessions is sent (with
+// Individual Session Control, before its Stop-N-Ack arrives), the summary
+// is marked invalid and comes with an error matching client.ErrControlLost;
+// a failed Stop-Sessions marks it invalid too.
 func RunFull(ctx context.Context, cfg Config, fc FullConfig, opts ...Option) (Summary, error) {
 	fc = fc.withDefaults()
 	if err := fc.validate(); err != nil {
@@ -311,9 +311,10 @@ func RunFull(ctx context.Context, cfg Config, fc FullConfig, opts ...Option) (Su
 		stopCancel()
 	}
 	// A control connection lost during the run or before Stop-Sessions was
-	// acknowledged, or a failed Stop-Sessions, leaves the results invalid
-	// (SPEC §5.6). A socket failure aborts the run without that mark, as in
-	// a Light run.
+	// sent (Stop-Sessions has no acknowledgment; with Individual Session
+	// Control, before the Stop-N-Ack arrived), or a failed Stop-Sessions,
+	// leaves the results invalid (SPEC §5.6). A socket failure aborts the
+	// run without that mark, as in a Light run.
 	lost := c.Err()
 	switch {
 	case lost != nil:

@@ -19,6 +19,9 @@ type Hook interface {
 	// change reply and grow it up to cap(reply), the receive buffer; it
 	// returns the reply length. ok false drops the packet, counted as
 	// malformed. A length below 14 or above cap(reply) drops it too.
+	//
+	// Reply must not call Light.Close: Close waits for Serve, and Serve
+	// waits for the goroutine that runs Reply.
 	Reply(in *HookPacket, reply []byte) (n int, ok bool)
 }
 
